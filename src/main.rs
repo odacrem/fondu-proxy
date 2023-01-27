@@ -1,5 +1,4 @@
 use fastly::http::{header, HeaderValue, Method, StatusCode};
-use fastly::handle::CacheOverride;
 use fastly::{Error, Request, Response, Body};
 use fastly::http::request::{PendingRequest, SendError};
 //use url::{Url, ParseError};
@@ -134,12 +133,11 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
 // assumes "accept-encoding: deflate"
 // todo handle other compression types, etc
 fn compress_response(resp: Response) -> Result<Response, Error> {
-    let (parts, body) = resp.into_parts();
+    let body = resp.take_body();
     let gzip_body = compress_body(body).unwrap();
-    let mut modified_resp = Response::from_parts(parts, gzip_body);
+    let mut modified_resp = Response::from_body(gzip_body);
     modified_resp
-        .headers_mut()
-        .insert("CONTENT-ENCODING", HeaderValue::from_static("deflate"));
+        .set_header("CONTENT-ENCODING", HeaderValue::from_static("deflate"));
     Ok(modified_resp)
 }
 
@@ -152,16 +150,13 @@ fn compress_body(body: fastly::http::body::Body) -> Result<fastly::http::body::B
 }
 
 fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError> {
-    let mut fondu_req = Request::builder().uri(fondu_uri).body(()).unwrap();
-    // we don't want gzipped respones because we will decode json
-    fondu_req.headers_mut().remove(header::ACCEPT_ENCODING);
+    let mut fondu_req = Request::get(fondu_uri);
+    fondu_req.set_pass(true);
+    fondu_req.remove_header(header::ACCEPT_ENCODING);
     // for this demo let's make sure not to cache responses from fondu
     // in future we would leverage sensible cache policy
-    *fondu_req.cache_override_mut() = CacheOverride::Pass;
     // redundant given the fastly backend config matches
-    fondu_req
-        .headers_mut()
-        .insert("Host", HeaderValue::from_static(FONDU_BACKEND_HOST));
+    fondu_req.set_header("Host", HeaderValue::from_static(FONDU_BACKEND_HOST));
     // send the request async so we can move on to requesting the content_source resource
     fondu_req.send_async(FONDU_BACKEND)
 }
