@@ -1,6 +1,7 @@
 use fastly::http::{header, HeaderValue, Method, StatusCode};
-use fastly::request::CacheOverride;
-use fastly::{Body, Error, PendingRequest, Request, RequestExt, Response, ResponseExt, SendError};
+use fastly::handle::CacheOverride;
+use fastly::{Error, Request, Response, Body};
+use fastly::http::request::{PendingRequest, SendError};
 //use url::{Url, ParseError};
 
 // use flate2 for zlib/deflate compression
@@ -29,14 +30,13 @@ const CONTENT_SOURCE_BACKEND_HOST: &str = "";
 const FONDU_RESOURCE_MODE: FonduResourceMode = FonduResourceMode::Uri;
 
 #[fastly::main]
-fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
+fn main(mut req: Request) -> Result<Response, Error> {
     // only allow GET and HEAD requests
     // in future we would proxy all requests to backend
     const VALID_METHODS: [Method; 2] = [Method::HEAD, Method::GET];
-    if !(VALID_METHODS.contains(req.method())) {
-        return Ok(Response::builder()
-            .status(StatusCode::METHOD_NOT_ALLOWED)
-            .body(Body::from("This method is not allowed"))?);
+    if !(VALID_METHODS.contains(req.get_method())) {
+        return Ok(Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
+            .with_body(Body::from("This method is not allowed")));
     }
 
     // todo -- skip fondu requests certain request patterns like .css or .jss or .jpg etc
@@ -58,9 +58,8 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
     // request the base page from content_source
     // remove accept-encoding to ensure no gzip
     // since we will be parsing the html response
-    req.headers_mut()
-        .insert("Host", HeaderValue::from_static(CONTENT_SOURCE_BACKEND_HOST));
-    req.headers_mut().remove(header::ACCEPT_ENCODING);
+    req.set_header("Host", HeaderValue::from_static(CONTENT_SOURCE_BACKEND_HOST));
+    req.remove_header(header::ACCEPT_ENCODING);
 
     // send the request to content_source backend
     let content_source_resp = req.send(CONTENT_SOURCE_BACKEND)?;
@@ -69,7 +68,7 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
     // only text/html responses are to be rewritten
     // text/* responses can be compressed
     // others just returned unmodified
-    let content_source_content_type = header_val(content_source_resp.headers().get(header::CONTENT_TYPE))
+    let content_source_content_type = header_val(content_source_resp.get_header(header::CONTENT_TYPE))
         .split(';')
         .collect::<Vec<&str>>()[0];
     match content_source_content_type {
@@ -79,7 +78,7 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
             // in the content_source response and use that to fetch
             // data from fondu
             if FONDU_RESOURCE_MODE == FonduResourceMode::Header {
-                let fondu_resource = header_val(content_source_resp.headers().get("X-FONDU-RESOURCE"));
+                let fondu_resource = header_val(content_source_resp.get_header("X-FONDU-RESOURCE"));
                 if !fondu_resource.is_empty() {
                     let fondu_uri = format!("https://{}{}", FONDU_BACKEND_HOST, fondu_resource);
                     fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
@@ -95,7 +94,7 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
                     // todo figure out how to poll for the
                     // fondu resp; ultimately we only want to wait N ms for the fondu response
                     let fondu_resp = fondu_req.wait()?;
-                    let fondu_resp_status = fondu_resp.status();
+                    let fondu_resp_status = fondu_resp.get_status();
                     // lets check the the response code from fondu
                     // only proceed with an OK resonse
                     match fondu_resp_status {
@@ -107,7 +106,7 @@ fn main(mut req: Request<Body>) -> Result<impl ResponseExt, Error> {
             };
             // for demo lets make sure responses are not cached in any
             // upstream caches or the browser
-            content_source_resp.headers_mut().insert(
+            content_source_resp.set_header(
                 "Cache-Control",
                 HeaderValue::from_static("private, max-age=0, no-cache, no-store, must-revalidate"),
             );
@@ -134,7 +133,7 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
 // compress a response and set headers
 // assumes "accept-encoding: deflate"
 // todo handle other compression types, etc
-fn compress_response(resp: Response<Body>) -> Result<Response<fastly::Body>, Error> {
+fn compress_response(resp: Response) -> Result<Response, Error> {
     let (parts, body) = resp.into_parts();
     let gzip_body = compress_body(body).unwrap();
     let mut modified_resp = Response::from_parts(parts, gzip_body);
@@ -145,7 +144,7 @@ fn compress_response(resp: Response<Body>) -> Result<Response<fastly::Body>, Err
 }
 
 // compress the body using flate2/zlib
-fn compress_body(body: fastly::body::Body) -> Result<fastly::body::Body, Error> {
+fn compress_body(body: fastly::http::body::Body) -> Result<fastly::http::body::Body, Error> {
     let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
     e.write_all(&body.into_bytes())?;
     let gzip_body = Body::from(e.finish().unwrap());
@@ -172,9 +171,9 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError
 // replacing the contents of <component-list> tags in the content_source body
 // with the components from the fondu
 fn rewrite_response(
-    content_source_resp: Response<Body>,
+    content_source_resp: Response,
     fondu_resp_body: Body,
-) -> Result<Response<fastly::Body>, Error> {
+) -> Result<Response, Error> {
     // parse the fondu response
     let fondu_page = fondu::Page::from_json_str(fondu_resp_body.into_string().as_str());
     // if we encounter an error here
