@@ -6,7 +6,7 @@ description = ""
 language = "rust"
 manifest_version = 2
 name = "fondu-proxy-rust"
-service_id = ""
+service_id = "FF5bRHzL2mVBnO34CyMpy0"
 
 [scripts]
   build = "cargo build --bin fondu-proxy-rust --release --target wasm32-wasi --color always"

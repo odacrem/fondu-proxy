@@ -12,17 +12,17 @@ use std::io::Write;
 mod fondu;
 
 // fondu fastly backend
-const FONDU_BACKEND: &str = "";
+const FONDU_BACKEND: &str = "component-host";
 // fondu hostname
-const FONDU_BACKEND_HOST: &str = "";
+const FONDU_BACKEND_HOST: &str = "fondu.fly.dev";
 // for demo, force this to be the fondu resource
-const FONDU_RESOURCE: &str = "";
+const FONDU_RESOURCE: &str = "/";
 
 // content_source backend (can be any site that returns <component-list> markup
 //const content_source_BACKEND: &str = "content_source-demo";
 //const content_source_BACKEND_HOST: &str = "dummy-server-m22kxdvy6a-uk.a.run.app";
-const CONTENT_SOURCE_BACKEND: &str = "";
-const CONTENT_SOURCE_BACKEND_HOST: &str = "";
+const CONTENT_SOURCE_BACKEND: &str = "content-host";
+const CONTENT_SOURCE_BACKEND_HOST: &str = "this-resume-is-a-headless-shopify-store.fly.dev";
 
 // derive the fondu Resource Uri from the request url
 // rather than from the x-fondu-resource response header
