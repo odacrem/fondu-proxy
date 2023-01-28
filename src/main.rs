@@ -132,7 +132,7 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
 // compress a response and set headers
 // assumes "accept-encoding: deflate"
 // todo handle other compression types, etc
-fn compress_response(resp: Response) -> Result<Response, Error> {
+fn compress_response(mut resp: Response) -> Result<Response, Error> {
     let body = resp.take_body();
     let gzip_body = compress_body(body).unwrap();
     let mut modified_resp = Response::from_body(gzip_body);
@@ -180,24 +180,20 @@ fn rewrite_response(
     // set up a fondu page renderer
     let mut fondu_renderer = fondu::Renderer::new(fondu_page);
     // break the content_source response into header/body parts
-    let (content_source_parts, content_source_body) = content_source_resp.into_parts();
-
-    // get a handle to the content_source body
-    // and ask the fondu renderer to render the page
-    let content_source_body_handle = &mut content_source_body.into_handle();
+    let (content_source_response_handle, content_source_body_handle) = content_source_resp.into_handles();
 
     // todo handle this error; ideally we can return the original content_source resp
     let modified_content_source_body = fondu_renderer.render(content_source_body_handle)?;
 
     // create a new response body from the transformed html
-    let modified_content_source_body = Body::from(modified_content_source_body);
+    let modified_content_source_body = Body::from(modified_content_source_body).into_handle();
+
 
     //return the content_source page with fondu components inserted
-    let mut modified_content_source_resp = Response::from_parts(content_source_parts, modified_content_source_body);
+    let mut modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body).unwrap();
+
     // indicate that this page was modified by fondu
-    modified_content_source_resp
-        .headers_mut()
-        .insert("X-FONDU-REWRITE", HeaderValue::from_static("true"));
+    modified_content_source_resp.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
     Ok(modified_content_source_resp)
 }
 
