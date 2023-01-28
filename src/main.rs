@@ -16,7 +16,7 @@ const FONDU_BACKEND: &str = "component-host";
 // fondu hostname
 const FONDU_BACKEND_HOST: &str = "fondu.fly.dev";
 // for demo, force this to be the fondu resource
-const FONDU_RESOURCE: &str = "/";
+const FONDU_RESOURCE: &str = "/api";
 
 // content_source backend (can be any site that returns <component-list> markup
 //const content_source_BACKEND: &str = "content_source-demo";
