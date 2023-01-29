@@ -30,6 +30,10 @@ const FONDU_RESOURCE_MODE: FonduResourceMode = FonduResourceMode::Uri;
 
 #[fastly::main]
 fn main(mut req: Request) -> Result<Response, Error> {
+    // capture these for logging later
+    let method = String::from(req.get_method_str());
+    let path = String::from(req.get_path());
+
     // only allow GET and HEAD requests
     // in future we would proxy all requests to backend
     const VALID_METHODS: [Method; 2] = [Method::HEAD, Method::GET];
@@ -62,7 +66,6 @@ fn main(mut req: Request) -> Result<Response, Error> {
 
     // send the request to content_source backend
     let content_source_resp = req.send(CONTENT_SOURCE_BACKEND)?;
-
     // examine the response
     // only text/html responses are to be rewritten
     // text/* responses can be compressed
@@ -72,6 +75,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
         .collect::<Vec<&str>>()[0];
     match content_source_content_type {
         "text/html" => {
+            println!("Handling request {} {} {}", method, path, content_source_content_type);
             // if the fetch mode is configured to "Header"
             // then lets look for an X-fondu-Resource header
             // in the content_source response and use that to fetch
