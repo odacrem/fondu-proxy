@@ -5,6 +5,7 @@ use lol_html::{ElementContentHandlers, HtmlRewriter, Selector, Settings};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::io::Read;
+use std::borrow::Cow;
 
 // the css selector to find and replace with fondu component data
 macro_rules! component_selector_format {
@@ -98,57 +99,42 @@ pub struct Component {
 // to rewrite an html response body
 pub struct Renderer {
     fondu_page: Page,
-    element_handlers: Vec<ElementHandler>,
+    //element_handlers: Vec<ElementHandler>,
 }
 
 impl Renderer {
     pub fn new(fondu_page: Page) -> Renderer {
         Renderer {
             fondu_page,
-            element_handlers: Vec::new(),
+     //       element_handlers: Vec::new(),
         }
     }
 
     // set up the element handlers for each component list
     // in the fondu_page data
-    fn setup_element_handlers(&mut self) -> Vec<(&Selector, ElementContentHandlers)> {
+    fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
+        let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
         for (key, component_list) in self.fondu_page.component_lists.iter() {
             // this is the selector we will be looking to replace
             // ie <component-list list='top' />
             let name = format!(component_selector_format!(), key);
-            let selector: Selector = name.parse().unwrap();
-
             // gather up the html data for each component
             // in this list
-            let mut string_list = vec![];
-            let components = component_list.components.as_slice();
-            for component in components {
-                string_list.push(component.html.to_string());
-            }
-            let html = string_list.join("\n");
+            let closure = move |el: &mut Element| {
+                let mut string_list = vec![];
+                let components = component_list.components.as_slice();
+                for component in components {
+                    string_list.push(component.html.to_string());
+                }
+                let html = string_list.join("\n");
+                el.set_inner_content(&html, ContentType::Html);
+                Ok(())
+            };
 
-            // create the ElementHandler; store it on a vec
-            // owned by the Rendered so its lifetime will extend long enough
-            // got to be a better way to do this...
-            self.element_handlers
-                .push(ElementHandler { selector, html });
+            let selector : Cow<Selector>  =  Cow::Owned(name.parse().unwrap());
+            let element_handler = ElementContentHandlers::default().element(closure);
+            handlers.push((selector, element_handler))
         }
-        // loop through all the handlers
-        // and create the Tuples that lol_html::Settings.element_content_handlers expects
-        let handlers: Vec<(&Selector, ElementContentHandlers)> = self
-            .element_handlers
-            .iter()
-            .map(|handler| {
-                let closure = move |el: &mut Element| {
-                    el.set_inner_content(&handler.html, ContentType::Html);
-                    Ok(())
-                };
-                (
-                    &handler.selector,
-                    ElementContentHandlers::default().element(closure),
-                )
-            })
-            .collect();
         handlers
     }
 
@@ -160,14 +146,13 @@ impl Renderer {
         // buffer to hold the rewrite output
         let mut output = vec![];
         // ok, create the rewriter and assign the element_handlers
-        let mut rewriter = HtmlRewriter::try_new(
+        let mut rewriter = HtmlRewriter::new(
             Settings {
                 element_content_handlers,
                 ..Settings::default()
             },
             |c: &[u8]| output.extend_from_slice(c),
-        )
-        .unwrap();
+        );
         // set up a buffer for the src_body html
         let mut buffer = [0; 100];
         // read through the src_body html and rewrite
@@ -186,10 +171,4 @@ impl Renderer {
         let out = String::from_utf8(output).unwrap();
         Ok(out)
     }
-}
-
-// hold a css selector and the html string we want to replace its content with
-struct ElementHandler {
-    selector: Selector,
-    html: String,
 }
