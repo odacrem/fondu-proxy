@@ -214,34 +214,44 @@ enum FonduResourceMode {
     Header,
 }
 
+macro_rules! test_data_format {
+    () => {
+        "{{
+            \"selectors\": [
+                {{
+                    \"selector\": \"#foo\",
+                    \"op\":\"{}\",
+                    \"components\": [
+                        {{
+                            \"_ref\": \"/components/foo\",
+                            \"html\": \"<b>second</b>\"
+                        }},
+                        {{
+                            \"_ref\": \"/components/bar\",
+                            \"html\": \"<i>third</i>\"
+                        }}
+                    ]
+
+                }}
+            ]
+        }}"
+    };
+}
+
+fn setup_test_data(op: String) -> String {
+    let x = format!(test_data_format!(), op);
+    x
+}
 
 
 #[test]
 fn test_parse_json() {
-    let data = r##"
-        {
-            "selectors": [
-                {
-                    "selector": "#foo",
-                    "components": [
-                        {
-                            "_ref": "/components/foo",
-                            "html": "<b>ham</b>"
-                        },
-                        {
-                            "_ref": "/components/bar",
-                            "html": "<b>ham</b>"
-                        }
-                    ]
-
-                }
-            ]
-        }
-    "##;
-    let fondu_page = fondu::Page::from_json_str(data);
+    let data = setup_test_data(String::from("replace"));
+    let fondu_page = fondu::Page::from_json_str(&data);
     let fondu_page = match fondu_page {
         Ok(fondu_page) => fondu_page,
         Err(_) => {
+            assert!(false);
             return
         },
     };
@@ -250,130 +260,61 @@ fn test_parse_json() {
     assert_eq!("/components/foo",fondu_page.selectors[0].components[0]._ref)
 }
 #[test]
-fn test_render() {
-    let data = r##"
-        {
-            "selectors": [
-                {
-                    "selector": "#foo",
-                    "components": [
-                        {
-                            "_ref": "/components/foo",
-                            "html": "<b>ham</b>"
-                        },
-                        {
-                            "_ref": "/components/foo",
-                            "html": "<i>bacon</i>"
-                        }
-                    ]
-                }
-            ]
-        }
-    "##;
-    let fondu_page = fondu::Page::from_json_str(data).unwrap();
-    let mut renderer = fondu::Renderer::new(fondu_page);
-    let s = String::from("<div id='foo'>ham</div>");
-    let src_body = s.as_bytes();
-    let r = renderer.render(src_body);
-    let o = match r {
-        Ok(r) => r ,
-        Err(_) => String::from("error")
-    };
-    println!("{}",o);
-    assert_eq!(o,"<div id='foo'><b>ham</b>\n<i>bacon</i></div>");
-}
-
-#[test]
 fn test_parse_bad_json() {
     let data = r##"
         {
-            "selectors": [
-                {
-                    "selector": "#foo",
-                    "components": {
-                        "foo": {
-                            "_ref": "/components/foo",
-                            "html": "<b>ham</b>"
-                        },
-                        "bar": {
-                            "_ref": "/components/foo",
-                            "html": "<b>ham</b>"
-                        }
-                    }
-                }
-            ]
+            "selectors": [{
         }
     "##;
     let fondu_page = fondu::Page::from_json_str(data);
     assert!(fondu_page.is_err())
 }
 
-#[test]
-fn test_render_append() {
-    let data = r##"
-        {
-            "selectors": [
-                {
-                    "selector": "#foo",
-                    "op": "append",
-                    "components": [
-                        {
-                            "_ref": "/components/foo",
-                            "html": "<b>ham</b>"
-                        },
-                        {
-                            "_ref": "/components/foo",
-                            "html": "<i>bacon</i>"
-                        }
-                    ]
-                }
-            ]
-        }
-    "##;
-    let fondu_page = fondu::Page::from_json_str(data).unwrap();
+fn test_render(op: &str) -> String {
+    let data = setup_test_data(String::from(op));
+    let fondu_page = fondu::Page::from_json_str(&data).unwrap();
     let mut renderer = fondu::Renderer::new(fondu_page);
-    let s = String::from("<div id='foo'>sandwich</div>");
+    let s = String::from("<div id='foo'>first</div>");
     let src_body = s.as_bytes();
     let r = renderer.render(src_body);
     let o = match r {
         Ok(r) => r ,
         Err(_) => String::from("error")
     };
-    println!("{}",o);
-    assert_eq!(o,"<div id='foo'>sandwich<b>ham</b>\n<i>bacon</i></div>");
-}
-#[test]
-fn test_render_prepend() {
-    let data = r##"
-        {
-            "selectors": [
-                {
-                    "selector": "#foo",
-                    "op": "prepend",
-                    "components": [
-                        {
-                            "_ref": "/components/foo",
-                            "html": "<b>ham</b>"
-                        },
-                        {
-                            "_ref": "/components/foo",
-                            "html": "<i>bacon</i>"
-                        }
-                    ]
-                }
-            ]
-        }
-    "##;
-    let fondu_page = fondu::Page::from_json_str(data).unwrap();
-    let mut renderer = fondu::Renderer::new(fondu_page);
-    let s = String::from("<div id='foo'>sandwich</div>");
-    let src_body = s.as_bytes();
-    let r = renderer.render(src_body);
-    let o = match r {
-        Ok(r) => r ,
-        Err(_) => String::from("error")
-    };
-    println!("{}",o);
-    assert_eq!(o,"<div id='foo'><b>ham</b>\n<i>bacon</i>sandwich</div>");
+    o
 }
 
+#[test]
+fn test_render_replace() {
+    let o = test_render("replace");
+    println!("{}",o);
+    assert_eq!(o,"<div id='foo'><b>second</b>\n<i>third</i></div>");
+}
+
+#[test]
+fn test_render_append() {
+    let o = test_render("append");
+    println!("{}",o);
+    assert_eq!(o,"<div id='foo'>first<b>second</b>\n<i>third</i></div>");
+}
+
+#[test]
+fn test_render_prepend() {
+    let o = test_render("prepend");
+    println!("{}",o);
+    assert_eq!(o,"<div id='foo'><b>second</b>\n<i>third</i>first</div>");
+}
+
+#[test]
+fn test_render_before() {
+    let o = test_render("before");
+    println!("{}",o);
+    assert_eq!(o,"<b>second</b>\n<i>third</i><div id='foo'>first</div>");
+}
+
+#[test]
+fn test_render_after() {
+    let o = test_render("after");
+    println!("{}",o);
+    assert_eq!(o,"<div id='foo'>first</div><b>second</b>\n<i>third</i>");
+}
