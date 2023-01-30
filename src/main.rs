@@ -13,8 +13,6 @@ mod fondu;
 
 // fondu fastly backend
 const FONDU_BACKEND: &str = "fondu";
-// for demo, force this to be the fondu resource
-const FONDU_RESOURCE: &str = "/api";
 
 // content_source backend
 const CONTENT_SOURCE_BACKEND: &str = "content";
