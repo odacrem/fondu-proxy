@@ -211,3 +211,98 @@ enum FonduResourceMode {
     Uri,
     Header,
 }
+
+
+
+#[test]
+fn test_parse_json() {
+    let data = r#"
+        {
+            "selectors": [
+                {
+                    "selector": "\\#foo",
+                    "components": [
+                        {
+                            "_ref": "/components/foo",
+                            "html": "<b>ham</b>"
+                        },
+                        {
+                            "_ref": "/components/bar",
+                            "html": "<b>ham</b>"
+                        }
+                    ]
+
+                }
+            ]
+        }
+    "#;
+    let fondu_page = fondu::Page::from_json_str(data);
+    let fondu_page = match fondu_page {
+        Ok(fondu_page) => fondu_page,
+        Err(_) => {
+            return
+        },
+    };
+    assert_eq!(1,fondu_page.selectors.len());
+    assert_eq!(2,fondu_page.selectors[0].components.len());
+    assert_eq!("/components/foo",fondu_page.selectors[0].components[0]._ref)
+}
+#[test]
+fn test_render() {
+    let data = r##"
+        {
+            "selectors": [
+                {
+                    "selector": "#foo",
+                    "components": [
+                        {
+                            "_ref": "/components/foo",
+                            "html": "<b>ham</b>"
+                        },
+                        {
+                            "_ref": "/components/foo",
+                            "html": "<i>bacon</i>"
+                        }
+                    ]
+                }
+            ]
+        }
+    "##;
+    let fondu_page = fondu::Page::from_json_str(data).unwrap();
+    let mut renderer = fondu::Renderer::new(fondu_page);
+    let s = String::from("<div id='foo'>ham</div>");
+    let src_body = s.as_bytes();
+    let r = renderer.render(src_body);
+    let o = match r {
+        Ok(r) => r ,
+        Err(_) => String::from("error")
+    };
+    println!("{}",o);
+    assert_eq!(o,"<div id='foo'><b>ham</b>\n<i>bacon</i></div>");
+}
+
+#[test]
+fn test_parse_bad_json() {
+    let data = r#"
+        {
+            "selectors": [
+                {
+                    "selector": "\\#foo",
+                    "components": {
+                        "foo": {
+                            "_ref": "/components/foo",
+                            "html": "<b>ham</b>"
+                        },
+                        "bar": {
+                            "_ref": "/components/foo",
+                            "html": "<b>ham</b>"
+                        }
+                    }
+                }
+            ]
+        }
+    "#;
+    let fondu_page = fondu::Page::from_json_str(data);
+    assert!(fondu_page.is_err())
+}
+

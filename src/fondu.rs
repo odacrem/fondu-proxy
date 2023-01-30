@@ -74,7 +74,7 @@ impl Renderer {
 
     // given a handle to html body
     // rewrite the html, inserting components
-    pub fn render(&mut self, mut src_body: fastly::handle::BodyHandle) -> Result<String, Error> {
+    pub fn render(&mut self, mut src_body: impl Read) -> Result<String, Error> {
         // set up the element handlers
         let element_content_handlers = self.setup_element_handlers();
         // buffer to hold the rewrite output
@@ -106,3 +106,4 @@ impl Renderer {
         Ok(out)
     }
 }
+

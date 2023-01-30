@@ -22,3 +22,6 @@ tail: dotenv
 serve: dotenv
 	fastly compute serve --addr 127.0.0.1:4000
 
+test:
+	cargo wasi test
+
