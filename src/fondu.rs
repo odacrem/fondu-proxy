@@ -3,7 +3,6 @@ use fastly::Error;
 use lol_html::html_content::{ContentType, Element};
 use lol_html::{ElementContentHandlers, HtmlRewriter, Selector, Settings};
 use serde::{Serialize, Deserialize};
-use serde_json::{Map, Value};
 use std::io::Read;
 use std::borrow::Cow;
 
@@ -14,12 +13,6 @@ pub struct Page {
 }
 
 impl Page {
-    // create an empty page struct
-    pub fn new(_name: String) -> Page {
-        Page {
-            selectors: Vec::new(),
-        }
-    }
     // given fondu page json string
     // parse into Page struct
     pub fn from_json_str(json: &str) -> Result<Page, serde_json::error::Error> {
@@ -34,14 +27,6 @@ pub struct ComponentList {
     pub components: Vec<Component>,
 }
 
-impl ComponentList {
-    pub fn new(_name: String) -> ComponentList {
-        ComponentList {
-            selector: _name,
-            components: Vec::new(),
-        }
-    }
-}
 
 // represent a component
 #[derive(Serialize, Deserialize)]
