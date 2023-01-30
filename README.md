@@ -1,5 +1,7 @@
-# Fondu Proxy (Rust)
+# Fondu Proxy
 
-Fondu Proxy is a super fast proxy written in Rust and deployed as a Fastly Service via Fastly’s Compute@Edge platform.
+## Experiments in re-writing html content at the edge.
 
 
+            
+      
