@@ -12,9 +12,15 @@ service_id = "FF5bRHzL2mVBnO34CyMpy0"
   build = "cargo build --bin fondu-proxy-rust --release --target wasm32-wasi --color always"
 
 [setup]
-	[setup.backends.content]
-	[setup.backends.fondu]
-
+	[setup.backends]
+		[setup.backends.content]
+			description = "backend for the content"
+		[setup.backends.fondu]
+			description = "backend for the fondu api service"
+	[setup.dictionaries]
+		[setup.dictionaries.config]
+			[setup.dictionaries.config.items]
+				[setup.dictionaries.config.items.fondu_path]
 
 [local_server]
 	[local_server.backends]
@@ -22,3 +28,8 @@ service_id = "FF5bRHzL2mVBnO34CyMpy0"
 			url = "https://this-resume-is-a-headless-shopify-store.fly.dev"
 		[local_server.backends.fondu]
 			url = "http://localhost:3000/"
+		[local_server.dictionaries]
+			[local_server.dictionaries.config]
+				format = "inline-toml"
+				[local_server.dictionaries.config.contents]
+						"fondu_path" = "/api"

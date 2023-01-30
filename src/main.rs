@@ -1,5 +1,5 @@
 use fastly::http::{header, HeaderValue, Method, StatusCode};
-use fastly::{Error, Request, Response, Body};
+use fastly::{ConfigStore, Error, Request, Response, Body};
 use fastly::http::request::{PendingRequest, SendError};
 //use url::{Url, ParseError};
 
@@ -28,7 +28,12 @@ fn main(mut req: Request) -> Result<Response, Error> {
     // capture these for logging later
     let method = String::from(req.get_method_str());
     let path = String::from(req.get_path());
-
+    let config_dict = ConfigStore::open("config");
+    let fondu_path  = config_dict.get("fondu_path");
+    let fondu_path = match fondu_path {
+        Some(path) => path,
+        None => String::from("/")
+    };
     // only allow GET and HEAD requests
     // in future we would proxy all requests to backend
     const VALID_METHODS: [Method; 2] = [Method::HEAD, Method::GET];
@@ -51,7 +56,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
         // (.e.g) /_pages/<...content_source uri ...>
         // dummy host foo.bar will be overidden by backend config
         // option to override origin host
-        let fondu_uri = format!("https://{}{}", "foo.bar", FONDU_RESOURCE);
+        let fondu_uri = format!("https://{}{}", "foo.bar", fondu_path);
         fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
     }
 
@@ -82,7 +87,7 @@ fn main(mut req: Request) -> Result<Response, Error> {
                 if !fondu_resource.is_empty() {
                     // dummy host foo.bar will be overidden by backend config
                     // option to override origin host
-                    let fondu_uri = format!("https://{}{}", "foo.bar", fondu_resource);
+                    let fondu_uri = format!("https://{}{}", "foo.bar", fondu_path);
                     fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
                 }
             }
