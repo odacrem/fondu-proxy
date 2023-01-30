@@ -11,9 +11,14 @@ service_id = "FF5bRHzL2mVBnO34CyMpy0"
 [scripts]
   build = "cargo build --bin fondu-proxy-rust --release --target wasm32-wasi --color always"
 
+[setup]
+	[setup.backends.content]
+	[setup.backends.fondu]
+
+
 [local_server]
 	[local_server.backends]
-		[local_server.backends.content-host]
+		[local_server.backends.content]
 			url = "https://this-resume-is-a-headless-shopify-store.fly.dev"
-		[local_server.backends.component-host]
+		[local_server.backends.fondu]
 			url = "http://localhost:3000/"

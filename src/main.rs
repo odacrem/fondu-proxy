@@ -12,17 +12,12 @@ use std::time::{Instant};
 mod fondu;
 
 // fondu fastly backend
-const FONDU_BACKEND: &str = "component-host";
-// fondu hostname
-const FONDU_BACKEND_HOST: &str = "fondu.fly.dev";
+const FONDU_BACKEND: &str = "fondu";
 // for demo, force this to be the fondu resource
 const FONDU_RESOURCE: &str = "/api";
 
-// content_source backend (can be any site that returns <component-list> markup
-//const content_source_BACKEND: &str = "content_source-demo";
-//const content_source_BACKEND_HOST: &str = "dummy-server-m22kxdvy6a-uk.a.run.app";
-const CONTENT_SOURCE_BACKEND: &str = "content-host";
-const CONTENT_SOURCE_BACKEND_HOST: &str = "this-resume-is-a-headless-shopify-store.fly.dev";
+// content_source backend
+const CONTENT_SOURCE_BACKEND: &str = "content";
 
 // derive the fondu Resource Uri from the request url
 // rather than from the x-fondu-resource response header
@@ -54,14 +49,16 @@ fn main(mut req: Request) -> Result<Response, Error> {
     if FONDU_RESOURCE_MODE == FonduResourceMode::Uri {
         // todo: the fondu resource should be derived from the content_source request
         // (.e.g) /_pages/<...content_source uri ...>
-        let fondu_uri = format!("https://{}{}", FONDU_BACKEND_HOST, FONDU_RESOURCE);
+        // dummy host foo.bar will be overidden by backend config
+        // option to override origin host
+        let fondu_uri = format!("https://{}{}", "foo.bar", FONDU_RESOURCE);
         fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
     }
 
     // request the base page from content_source
     // remove accept-encoding to ensure no gzip
     // since we will be parsing the html response
-    req.set_header("Host", HeaderValue::from_static(CONTENT_SOURCE_BACKEND_HOST));
+    //req.set_header("Host", HeaderValue::from_static(CONTENT_SOURCE_BACKEND_HOST));
     req.remove_header(header::ACCEPT_ENCODING);
 
     // send the request to content_source backend
@@ -83,7 +80,9 @@ fn main(mut req: Request) -> Result<Response, Error> {
             if FONDU_RESOURCE_MODE == FonduResourceMode::Header {
                 let fondu_resource = header_val(content_source_resp.get_header("X-FONDU-RESOURCE"));
                 if !fondu_resource.is_empty() {
-                    let fondu_uri = format!("https://{}{}", FONDU_BACKEND_HOST, fondu_resource);
+                    // dummy host foo.bar will be overidden by backend config
+                    // option to override origin host
+                    let fondu_uri = format!("https://{}{}", "foo.bar", fondu_resource);
                     fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
                 }
             }
@@ -162,7 +161,7 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError
     // for this demo let's make sure not to cache responses from fondu
     // in future we would leverage sensible cache policy
     // redundant given the fastly backend config matches
-    fondu_req.set_header("Host", HeaderValue::from_static(FONDU_BACKEND_HOST));
+    //fondu_req.set_header("Host", HeaderValue::from_static(FONDU_BACKEND_HOST));
     // send the request async so we can move on to requesting the content_source resource
     fondu_req.send_async(FONDU_BACKEND)
 }
