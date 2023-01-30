@@ -27,7 +27,6 @@ macro_rules! component_selector_format {
 // }
 pub struct Page {
     pub name: String,
-    pub component_lists: HashMap<String, ComponentList>,
     pub selectors: Vec<ComponentList>,
 }
 
@@ -36,7 +35,6 @@ impl Page {
     pub fn new(_name: String) -> Page {
         Page {
             name: _name,
-            component_lists: HashMap::new(),
             selectors: Vec::new(),
         }
     }
@@ -53,6 +51,11 @@ impl Page {
         // loop through all the keys e.g "top", "bottom" etc
         // the value should be an array of components
         let obj: Map<String, Value> = parsed.as_object().unwrap().clone();
+        let selector_array = obj.get("xselectors");
+        match selector_array {
+           Some(x) => println!("ok"),
+           None => {}
+        }
         for key in obj.keys() {
             // assume any arrays are component lists
             if key == "selectors" && obj.get(key).unwrap().is_array() {
@@ -61,7 +64,6 @@ impl Page {
                     let m = s.as_object().unwrap();
                     let sel = m.get("selector").unwrap().as_str().unwrap();
                     let cl = m.get("components").unwrap().as_array().unwrap();
-                    println!("{}",sel);
                     let mut component_list = ComponentList::new(String::from(sel));
                     for com in cl {
                         let m = com.as_object().unwrap();
@@ -69,6 +71,7 @@ impl Page {
                             _ref: String::from(m.get("_ref").unwrap().as_str().unwrap()),
                             html: String::from(m.get("html").unwrap().as_str().unwrap()),
                         };
+                        component_list.components.push(dc);
                     }
                     page.selectors.push(component_list);
                 }
@@ -79,7 +82,8 @@ impl Page {
                     if component_lists.get(list_key).unwrap().is_array() {
                         let list = component_lists.get(list_key).unwrap().as_array().unwrap();
                         // create a ComponentList struct for each
-                        let mut component_list = ComponentList::new(String::from(list_key));
+                        let selector = format!(component_selector_format!(), list_key);
+                        let mut component_list = ComponentList::new(String::from(selector));
                         // loop through each and create a Component struct
                         for c in list {
                             let m = c.as_object().unwrap();
@@ -89,8 +93,7 @@ impl Page {
                             };
                             component_list.components.push(dc);
                         }
-                        page.component_lists
-                            .insert(String::from(list_key), component_list);
+                        page.selectors.push(component_list);
                     }
                 }
             }
@@ -140,14 +143,8 @@ impl Renderer {
     fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
         let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
         for component_list in self.fondu_page.selectors.iter() {
-            println!("{}", component_list.name)
-        }
-        for (key, component_list) in self.fondu_page.component_lists.iter() {
-            // this is the selector we will be looking to replace
-            // ie <component-list list='top' />
-            let name = format!(component_selector_format!(), key);
-            // gather up the html data for each component
-            // in this list
+            println!("setting up: {}", component_list.name);
+            let selector : Cow<Selector>  =  Cow::Owned(component_list.name.parse().unwrap());
             let closure = move |el: &mut Element| {
                 let mut string_list = vec![];
                 let components = component_list.components.as_slice();
@@ -158,8 +155,6 @@ impl Renderer {
                 el.set_inner_content(&html, ContentType::Html);
                 Ok(())
             };
-
-            let selector : Cow<Selector>  =  Cow::Owned(name.parse().unwrap());
             let element_handler = ElementContentHandlers::default().element(closure);
             handlers.push((selector, element_handler))
         }
