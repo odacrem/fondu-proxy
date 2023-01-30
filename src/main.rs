@@ -308,3 +308,72 @@ fn test_parse_bad_json() {
     assert!(fondu_page.is_err())
 }
 
+#[test]
+fn test_render_append() {
+    let data = r##"
+        {
+            "selectors": [
+                {
+                    "selector": "#foo",
+                    "op": "append",
+                    "components": [
+                        {
+                            "_ref": "/components/foo",
+                            "html": "<b>ham</b>"
+                        },
+                        {
+                            "_ref": "/components/foo",
+                            "html": "<i>bacon</i>"
+                        }
+                    ]
+                }
+            ]
+        }
+    "##;
+    let fondu_page = fondu::Page::from_json_str(data).unwrap();
+    let mut renderer = fondu::Renderer::new(fondu_page);
+    let s = String::from("<div id='foo'>sandwich</div>");
+    let src_body = s.as_bytes();
+    let r = renderer.render(src_body);
+    let o = match r {
+        Ok(r) => r ,
+        Err(_) => String::from("error")
+    };
+    println!("{}",o);
+    assert_eq!(o,"<div id='foo'>sandwich<b>ham</b>\n<i>bacon</i></div>");
+}
+#[test]
+fn test_render_prepend() {
+    let data = r##"
+        {
+            "selectors": [
+                {
+                    "selector": "#foo",
+                    "op": "prepend",
+                    "components": [
+                        {
+                            "_ref": "/components/foo",
+                            "html": "<b>ham</b>"
+                        },
+                        {
+                            "_ref": "/components/foo",
+                            "html": "<i>bacon</i>"
+                        }
+                    ]
+                }
+            ]
+        }
+    "##;
+    let fondu_page = fondu::Page::from_json_str(data).unwrap();
+    let mut renderer = fondu::Renderer::new(fondu_page);
+    let s = String::from("<div id='foo'>sandwich</div>");
+    let src_body = s.as_bytes();
+    let r = renderer.render(src_body);
+    let o = match r {
+        Ok(r) => r ,
+        Err(_) => String::from("error")
+    };
+    println!("{}",o);
+    assert_eq!(o,"<div id='foo'><b>ham</b>\n<i>bacon</i>sandwich</div>");
+}
+

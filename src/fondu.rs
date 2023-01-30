@@ -24,6 +24,7 @@ impl Page {
 #[derive(Serialize, Deserialize)]
 pub struct ComponentList {
     pub selector: String,
+    pub op: Option<String>,
     pub components: Vec<Component>,
 }
 
@@ -56,14 +57,26 @@ impl Renderer {
         for component_list in self.fondu_page.selectors.iter() {
             println!("setting up: {}", component_list.selector);
             let selector : Cow<Selector>  =  Cow::Owned(component_list.selector.parse().unwrap());
+            let components = component_list.components.as_slice();
+            let op = match &component_list.op {
+                Some(x) => {
+                    String::from(x)
+                },
+                None => String::from(""),
+            };
             let closure = move |el: &mut Element| {
                 let mut string_list = vec![];
-                let components = component_list.components.as_slice();
                 for component in components {
                     string_list.push(component.html.to_string());
                 }
                 let html = string_list.join("\n");
-                el.set_inner_content(&html, ContentType::Html);
+                match op.as_str() {
+                  "append" =>  el.append(&html, ContentType::Html),
+                  "prepend" =>  el.prepend(&html, ContentType::Html),
+                  "after" =>  el.after(&html, ContentType::Html),
+                  "before" =>  el.before(&html, ContentType::Html),
+                  _  =>  el.set_inner_content(&html, ContentType::Html),
+                }
                 Ok(())
             };
             let element_handler = ElementContentHandlers::default().element(closure);
