@@ -169,7 +169,6 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError
 
 // given a content_source response and a fondu response
 // rewrite the content_source response body
-// replacing the contents of <component-list> tags in the content_source body
 // with the components from the fondu
 fn rewrite_response(
     content_source_resp: Response,
