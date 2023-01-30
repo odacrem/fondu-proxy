@@ -139,6 +139,9 @@ impl Renderer {
     // in the fondu_page data
     fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
         let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
+        for component_list in self.fondu_page.selectors.iter() {
+            println!("{}", component_list.name)
+        }
         for (key, component_list) in self.fondu_page.component_lists.iter() {
             // this is the selector we will be looking to replace
             // ie <component-list list='top' />
