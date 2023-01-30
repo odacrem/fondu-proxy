@@ -256,6 +256,7 @@ dependencies = [
  "flate2",
  "lol_html",
  "regex",
+ "serde",
  "serde_json",
  "url",
 ]

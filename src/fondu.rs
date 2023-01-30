@@ -2,31 +2,14 @@ use fastly::Error;
 //use lol_html::errors::RewritingError
 use lol_html::html_content::{ContentType, Element};
 use lol_html::{ElementContentHandlers, HtmlRewriter, Selector, Settings};
+use serde::{Serialize, Deserialize};
 use serde_json::{Map, Value};
-use std::collections::HashMap;
 use std::io::Read;
 use std::borrow::Cow;
 
-// the css selector to find and replace with fondu component data
-macro_rules! component_selector_format {
-    () => {
-        "component-list[list={}]"
-    };
-}
 
-// fondu page json structure is
-// {
-// "top": [
-//          {
-//            _ref: "_component/foo",
-//            html: "<div></div>",
-//            data: {..}
-//          }
-//        ],
-// "bottom": [ { "foo" ... } ],
-// }
+#[derive(Serialize, Deserialize)]
 pub struct Page {
-    pub name: String,
     pub selectors: Vec<ComponentList>,
 }
 
@@ -34,89 +17,34 @@ impl Page {
     // create an empty page struct
     pub fn new(_name: String) -> Page {
         Page {
-            name: _name,
             selectors: Vec::new(),
         }
     }
     // given fondu page json string
     // parse into Page struct
     pub fn from_json_str(json: &str) -> Result<Page, serde_json::error::Error> {
-        let parsed: Value = serde_json::from_str(json)?;
-        let mut page = Page::new(String::from("page"));
-        // if for some reason the resulting json is not an object
-        // then bail out
-        if !parsed.is_object() {
-            return Ok(page);
-        }
-        // loop through all the keys e.g "top", "bottom" etc
-        // the value should be an array of components
-        let obj: Map<String, Value> = parsed.as_object().unwrap().clone();
-        let selector_array = obj.get("xselectors");
-        match selector_array {
-           Some(x) => println!("ok"),
-           None => {}
-        }
-        for key in obj.keys() {
-            // assume any arrays are component lists
-            if key == "selectors" && obj.get(key).unwrap().is_array() {
-                let selector_list = obj.get(key).unwrap().as_array().unwrap();
-                for s in selector_list {
-                    let m = s.as_object().unwrap();
-                    let sel = m.get("selector").unwrap().as_str().unwrap();
-                    let cl = m.get("components").unwrap().as_array().unwrap();
-                    let mut component_list = ComponentList::new(String::from(sel));
-                    for com in cl {
-                        let m = com.as_object().unwrap();
-                        let dc = Component {
-                            _ref: String::from(m.get("_ref").unwrap().as_str().unwrap()),
-                            html: String::from(m.get("html").unwrap().as_str().unwrap()),
-                        };
-                        component_list.components.push(dc);
-                    }
-                    page.selectors.push(component_list);
-                }
-            }
-            if key == "component_lists" {
-                let component_lists: Map<String, Value> = obj.get(key).unwrap().as_object().unwrap().clone();
-                for list_key in component_lists.keys() {
-                    if component_lists.get(list_key).unwrap().is_array() {
-                        let list = component_lists.get(list_key).unwrap().as_array().unwrap();
-                        // create a ComponentList struct for each
-                        let selector = format!(component_selector_format!(), list_key);
-                        let mut component_list = ComponentList::new(String::from(selector));
-                        // loop through each and create a Component struct
-                        for c in list {
-                            let m = c.as_object().unwrap();
-                            let dc = Component {
-                                _ref: String::from(m.get("_ref").unwrap().as_str().unwrap()),
-                                html: String::from(m.get("html").unwrap().as_str().unwrap()),
-                            };
-                            component_list.components.push(dc);
-                        }
-                        page.selectors.push(component_list);
-                    }
-                }
-            }
-        }
+        let page:Page = serde_json::from_str(json)?;
         Ok(page)
     }
 }
 // holds a list of components
+#[derive(Serialize, Deserialize)]
 pub struct ComponentList {
-    pub name: String,
+    pub selector: String,
     pub components: Vec<Component>,
 }
 
 impl ComponentList {
     pub fn new(_name: String) -> ComponentList {
         ComponentList {
-            name: _name,
+            selector: _name,
             components: Vec::new(),
         }
     }
 }
 
 // represent a component
+#[derive(Serialize, Deserialize)]
 pub struct Component {
     pub _ref: String,
     pub html: String,
@@ -127,14 +55,12 @@ pub struct Component {
 // to rewrite an html response body
 pub struct Renderer {
     fondu_page: Page,
-    //element_handlers: Vec<ElementHandler>,
 }
 
 impl Renderer {
     pub fn new(fondu_page: Page) -> Renderer {
         Renderer {
             fondu_page,
-     //       element_handlers: Vec::new(),
         }
     }
 
@@ -143,8 +69,8 @@ impl Renderer {
     fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
         let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
         for component_list in self.fondu_page.selectors.iter() {
-            println!("setting up: {}", component_list.name);
-            let selector : Cow<Selector>  =  Cow::Owned(component_list.name.parse().unwrap());
+            println!("setting up: {}", component_list.selector);
+            let selector : Cow<Selector>  =  Cow::Owned(component_list.selector.parse().unwrap());
             let closure = move |el: &mut Element| {
                 let mut string_list = vec![];
                 let components = component_list.components.as_slice();
