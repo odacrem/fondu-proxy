@@ -28,6 +28,7 @@ macro_rules! component_selector_format {
 pub struct Page {
     pub name: String,
     pub component_lists: HashMap<String, ComponentList>,
+    pub selectors: Vec<ComponentList>,
 }
 
 impl Page {
@@ -36,6 +37,7 @@ impl Page {
         Page {
             name: _name,
             component_lists: HashMap::new(),
+            selectors: Vec::new(),
         }
     }
     // given fondu page json string
@@ -53,21 +55,44 @@ impl Page {
         let obj: Map<String, Value> = parsed.as_object().unwrap().clone();
         for key in obj.keys() {
             // assume any arrays are component lists
-            if obj.get(key).unwrap().is_array() {
-                let list = obj.get(key).unwrap().as_array().unwrap();
-                // create a ComponentList struct for each
-                let mut component_list = ComponentList::new(String::from(key));
-                // loop through each and create a Component struct
-                for c in list {
-                    let m = c.as_object().unwrap();
-                    let dc = Component {
-                        _ref: String::from(m.get("_ref").unwrap().as_str().unwrap()),
-                        html: String::from(m.get("html").unwrap().as_str().unwrap()),
-                    };
-                    component_list.components.push(dc);
+            if key == "selectors" && obj.get(key).unwrap().is_array() {
+                let selector_list = obj.get(key).unwrap().as_array().unwrap();
+                for s in selector_list {
+                    let m = s.as_object().unwrap();
+                    let sel = m.get("selector").unwrap().as_str().unwrap();
+                    let cl = m.get("components").unwrap().as_array().unwrap();
+                    println!("{}",sel);
+                    let mut component_list = ComponentList::new(String::from(sel));
+                    for com in cl {
+                        let m = com.as_object().unwrap();
+                        let dc = Component {
+                            _ref: String::from(m.get("_ref").unwrap().as_str().unwrap()),
+                            html: String::from(m.get("html").unwrap().as_str().unwrap()),
+                        };
+                    }
+                    page.selectors.push(component_list);
                 }
-                page.component_lists
-                    .insert(String::from(key), component_list);
+            }
+            if key == "component_lists" {
+                let component_lists: Map<String, Value> = obj.get(key).unwrap().as_object().unwrap().clone();
+                for list_key in component_lists.keys() {
+                    if component_lists.get(list_key).unwrap().is_array() {
+                        let list = component_lists.get(list_key).unwrap().as_array().unwrap();
+                        // create a ComponentList struct for each
+                        let mut component_list = ComponentList::new(String::from(list_key));
+                        // loop through each and create a Component struct
+                        for c in list {
+                            let m = c.as_object().unwrap();
+                            let dc = Component {
+                                _ref: String::from(m.get("_ref").unwrap().as_str().unwrap()),
+                                html: String::from(m.get("html").unwrap().as_str().unwrap()),
+                            };
+                            component_list.components.push(dc);
+                        }
+                        page.component_lists
+                            .insert(String::from(list_key), component_list);
+                    }
+                }
             }
         }
         Ok(page)
