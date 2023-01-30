@@ -218,11 +218,11 @@ enum FonduResourceMode {
 
 #[test]
 fn test_parse_json() {
-    let data = r#"
+    let data = r##"
         {
             "selectors": [
                 {
-                    "selector": "\\#foo",
+                    "selector": "#foo",
                     "components": [
                         {
                             "_ref": "/components/foo",
@@ -237,7 +237,7 @@ fn test_parse_json() {
                 }
             ]
         }
-    "#;
+    "##;
     let fondu_page = fondu::Page::from_json_str(data);
     let fondu_page = match fondu_page {
         Ok(fondu_page) => fondu_page,
@@ -285,11 +285,11 @@ fn test_render() {
 
 #[test]
 fn test_parse_bad_json() {
-    let data = r#"
+    let data = r##"
         {
             "selectors": [
                 {
-                    "selector": "\\#foo",
+                    "selector": "#foo",
                     "components": {
                         "foo": {
                             "_ref": "/components/foo",
@@ -303,7 +303,7 @@ fn test_parse_bad_json() {
                 }
             ]
         }
-    "#;
+    "##;
     let fondu_page = fondu::Page::from_json_str(data);
     assert!(fondu_page.is_err())
 }
