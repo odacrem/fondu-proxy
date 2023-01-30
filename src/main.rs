@@ -7,7 +7,7 @@ use fastly::http::request::{PendingRequest, SendError};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use std::io::Write;
-
+use std::time::{Instant};
 // include fondu module src/fondu.rs
 mod fondu;
 
@@ -96,7 +96,9 @@ fn main(mut req: Request) -> Result<Response, Error> {
                 Some(fondu_req) => {
                     // todo figure out how to poll for the
                     // fondu resp; ultimately we only want to wait N ms for the fondu response
+                    let start = Instant::now();
                     let fondu_resp = fondu_req.wait()?;
+                    println!("Elapsed: {:?}", start.elapsed());
                     let fondu_resp_status = fondu_resp.get_status();
                     // lets check the the response code from fondu
                     // only proceed with an OK resonse

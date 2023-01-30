@@ -19,6 +19,6 @@ deploy: dotenv
 tail: dotenv
 	fastly log-tail
 
-try:
-	http --headers https://broadly-super-bear.edgecompute.app/2020/12/31/22208287/duet-proxy-magic
-	http --header https://broadly-super-bear.edgecompute.app/packs/js/50-39d45b60161a3cc59ddf.chunk.js
+serve: dotenv
+	fastly compute serve --addr 127.0.0.1:4000
+
