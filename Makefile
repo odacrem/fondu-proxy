@@ -10,7 +10,7 @@ dotenv:
 
 .phony: all
 
-build:
+build: dotenv
 	fastly compute build --verbose
 
 deploy: dotenv
