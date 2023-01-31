@@ -214,7 +214,11 @@ enum FonduResourceMode {
     Header,
 }
 
-macro_rules! test_data_format {
+/***************************
+// YE OLDE TEST SUITE
+****************************/
+
+macro_rules! format_test_data {
     () => {
         "{{
             \"selectors\": [
@@ -238,36 +242,12 @@ macro_rules! test_data_format {
     };
 }
 
+
+
+#[allow(dead_code)]
 fn setup_test_data(op: String) -> String {
-    let x = format!(test_data_format!(), op);
-    x
-}
-
-
-#[test]
-fn test_parse_json() {
-    let data = setup_test_data(String::from("replace"));
-    let fondu_page = fondu::Page::from_json_str(&data);
-    let fondu_page = match fondu_page {
-        Ok(fondu_page) => fondu_page,
-        Err(_) => {
-            assert!(false);
-            return
-        },
-    };
-    assert_eq!(1,fondu_page.selectors.len());
-    assert_eq!(2,fondu_page.selectors[0].components.len());
-    assert_eq!("/components/foo",fondu_page.selectors[0].components[0]._ref)
-}
-#[test]
-fn test_parse_bad_json() {
-    let data = r##"
-        {
-            "selectors": [{
-        }
-    "##;
-    let fondu_page = fondu::Page::from_json_str(data);
-    assert!(fondu_page.is_err())
+  let data = format!(format_test_data!(), op);
+  data
 }
 
 fn test_render(op: &str) -> String {
@@ -317,4 +297,30 @@ fn test_render_after() {
     let o = test_render("after");
     println!("{}",o);
     assert_eq!(o,"<div id='foo'>first</div><b>second</b>\n<i>third</i>");
+}
+
+#[test]
+fn test_parse_json() {
+    let data = setup_test_data(String::from("replace"));
+    let fondu_page = fondu::Page::from_json_str(&data);
+    let fondu_page = match fondu_page {
+        Ok(fondu_page) => fondu_page,
+        Err(_) => {
+            assert!(false);
+            return
+        },
+    };
+    assert_eq!(1,fondu_page.selectors.len());
+    assert_eq!(2,fondu_page.selectors[0].components.len());
+    assert_eq!("/components/foo",fondu_page.selectors[0].components[0]._ref)
+}
+#[test]
+fn test_parse_bad_json() {
+    let data = r##"
+        {
+            "selectors": [{
+        }
+    "##;
+    let fondu_page = fondu::Page::from_json_str(data);
+    assert!(fondu_page.is_err())
 }
