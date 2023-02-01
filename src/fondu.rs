@@ -55,21 +55,27 @@ impl Renderer {
     fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
         let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
         for component_list in self.fondu_page.selectors.iter() {
-            println!("setting up: {}", component_list.selector);
             let selector : Cow<Selector>  =  Cow::Owned(component_list.selector.parse().unwrap());
             let components = component_list.components.as_slice();
+            // check to see if an "op" operation value is set;
+            // default to 'replace'
             let op = match &component_list.op {
                 Some(x) => {
                     String::from(x)
                 },
-                None => String::from(""),
+                None => String::from("replace"),
             };
+            println!("element handler: selector: {} op: {}", component_list.selector, op);
             let closure = move |el: &mut Element| {
                 let mut string_list = vec![];
+                // loop through all the component html
+                // and combine them into one big string
                 for component in components {
                     string_list.push(component.html.to_string());
                 }
                 let html = string_list.join("\n");
+
+                // if no op is set then replace the inner contents
                 match op.as_str() {
                   "append" =>  el.append(&html, ContentType::Html),
                   "prepend" =>  el.prepend(&html, ContentType::Html),

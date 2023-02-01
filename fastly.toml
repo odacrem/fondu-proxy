@@ -24,7 +24,8 @@ name = "fondu-proxy-rust"
 [local_server]
 	[local_server.backends]
 		[local_server.backends.content]
-			url = "https://this-resume-is-a-headless-shopify-store.fly.dev"
+#			url = "https://this-resume-is-a-headless-shopify-store.fly.dev"
+			url = "http://localhost:3000/"
 		[local_server.backends.fondu]
 			url = "http://localhost:3000/"
 		[local_server.dictionaries]

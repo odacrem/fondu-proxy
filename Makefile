@@ -25,3 +25,6 @@ serve: dotenv
 test:
 	cargo wasi test
 
+test_output:
+	cargo wasi test -- --nocapture
+

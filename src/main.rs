@@ -22,7 +22,11 @@ const CONTENT_SOURCE_BACKEND: &str = "content";
 const FONDU_RESOURCE_MODE: FonduResourceMode = FonduResourceMode::Uri;
 
 #[fastly::main]
-fn main(mut req: Request) -> Result<Response, Error> {
+fn main(req: Request) -> Result<Response, Error> {
+    let result = rewrite(req);
+    result
+}
+fn rewrite(mut req: Request) -> Result<Response, Error> {
     // capture these for logging later
     let method = String::from(req.get_method_str());
     let path = String::from(req.get_path());
@@ -61,11 +65,12 @@ fn main(mut req: Request) -> Result<Response, Error> {
     // request the base page from content_source
     // remove accept-encoding to ensure no gzip
     // since we will be parsing the html response
-    //req.set_header("Host", HeaderValue::from_static(CONTENT_SOURCE_BACKEND_HOST));
     req.remove_header(header::ACCEPT_ENCODING);
 
     // send the request to content_source backend
+    let csr_start = Instant::now();
     let content_source_resp = req.send(CONTENT_SOURCE_BACKEND)?;
+    println!("Wait for content: {:?}", csr_start.elapsed());
     // examine the response
     // only text/html responses are to be rewritten
     // text/* responses can be compressed
@@ -98,14 +103,22 @@ fn main(mut req: Request) -> Result<Response, Error> {
                 Some(fondu_req) => {
                     // todo figure out how to poll for the
                     // fondu resp; ultimately we only want to wait N ms for the fondu response
+                    // however, the backend config will have connect & time-between-bytes set
+                    // that should be used to ensure that we don't wait more than an acceptable
+                    // amount of time to fetch data
                     let start = Instant::now();
                     let fondu_resp = fondu_req.wait()?;
-                    println!("Elapsed: {:?}", start.elapsed());
+                    println!("Wait for fondu: {:?}", start.elapsed());
                     let fondu_resp_status = fondu_resp.get_status();
                     // lets check the the response code from fondu
                     // only proceed with an OK resonse
                     match fondu_resp_status {
-                        StatusCode::OK => rewrite_response(content_source_resp, fondu_resp.into_body())?,
+                        StatusCode::OK => {
+                            let start = Instant::now();
+                            let rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
+                            println!("Wait for rewriter: {:?}", start.elapsed());
+                            rr
+                        }
                         _ => content_source_resp,
                     }
                 }
@@ -143,10 +156,11 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
 fn compress_response(mut resp: Response) -> Result<Response, Error> {
     let body = resp.take_body();
     let gzip_body = compress_body(body).unwrap();
-    let mut modified_resp = Response::from_body(gzip_body);
-    modified_resp
+    //let mut modified_resp = Response::from_body(gzip_body);
+    resp.set_body(gzip_body);
+    resp
         .set_header("CONTENT-ENCODING", HeaderValue::from_static("deflate"));
-    Ok(modified_resp)
+    Ok(resp)
 }
 
 // compress the body using flate2/zlib
@@ -250,6 +264,7 @@ fn setup_test_data(op: String) -> String {
   data
 }
 
+#[allow(dead_code)]
 fn test_render(op: &str) -> String {
     let data = setup_test_data(String::from(op));
     let fondu_page = fondu::Page::from_json_str(&data).unwrap();
