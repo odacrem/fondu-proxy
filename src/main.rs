@@ -114,9 +114,8 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                     // only proceed with an OK resonse
                     match fondu_resp_status {
                         StatusCode::OK => {
-                            let start = Instant::now();
-                            let rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
-                            println!("Wait for rewriter: {:?}", start.elapsed());
+                            let mut rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
+                            rr.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
                             rr
                         }
                         _ => content_source_resp,
@@ -211,10 +210,8 @@ fn rewrite_response(
 
 
     //return the content_source page with fondu components inserted
-    let mut modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body).unwrap();
+    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body).unwrap();
 
-    // indicate that this page was modified by fondu
-    modified_content_source_resp.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
     Ok(modified_content_source_resp)
 }
 
