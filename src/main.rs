@@ -5,6 +5,7 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use std::io::Write;
 use std::time::{Instant};
+use regex::Regex;
 // include fondu module src/fondu.rs
 mod fondu;
 
@@ -24,7 +25,8 @@ fn main(req: Request) -> Result<Response, Error> {
     // todo -- skip fondu requests for certain request patterns like .css or .jss or .jpg etc
 	// todo -- alow configuration to exclude route patterns
 	// for now only process requests with no extension
-	if path.ends_with("/") {
+	let re = Regex::new(r"\.[\w]+$").unwrap();
+	if !re.is_match(path.as_str()) {
     	return rewrite(req)
 	} else {
 		println!("skipping {}", path);
