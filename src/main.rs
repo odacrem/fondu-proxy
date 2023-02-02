@@ -1,9 +1,6 @@
 use fastly::http::{header, HeaderValue, Method, StatusCode};
 use fastly::{ConfigStore, Error, Request, Response, Body};
 use fastly::http::request::{PendingRequest, SendError};
-//use url::{Url, ParseError};
-
-// use flate2 for zlib/deflate compression
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use std::io::Write;
@@ -23,8 +20,16 @@ const FONDU_RESOURCE_MODE: FonduResourceMode = FonduResourceMode::Uri;
 
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
-    let result = rewrite(req);
-    result
+    let path = String::from(req.get_path());
+    // todo -- skip fondu requests for certain request patterns like .css or .jss or .jpg etc
+	// todo -- alow configuration to exclude route patterns
+	// for now only process requests with no extension
+	if path.ends_with("/") {
+    	return rewrite(req)
+	} else {
+		println!("skipping {}", path);
+		return Ok(req.send(CONTENT_SOURCE_BACKEND)?);
+	}
 }
 fn rewrite(mut req: Request) -> Result<Response, Error> {
     // capture these for logging later
@@ -43,10 +48,9 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
         return Ok(Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
             .with_body(Body::from("This method is not allowed")));
     }
-
-    // todo -- skip fondu requests certain request patterns like .css or .jss or .jpg etc
-
     let mut fondu_req: Option<PendingRequest> = None;
+
+
 
     // if configured with fonduResourceMode::Uri
     // then we are going to determine the fondu resource to fetch
@@ -61,6 +65,7 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
         let fondu_uri = format!("https://{}{}", "foo.bar", fondu_path);
         fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
     }
+
 
     // request the base page from content_source
     // remove accept-encoding to ensure no gzip
@@ -80,7 +85,7 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
         .collect::<Vec<&str>>()[0];
     match content_source_content_type {
         "text/html" => {
-            println!("Handling request {} {} {}", method, path, content_source_content_type);
+            println!("Rewriting {} {} {}", method, path, content_source_content_type);
             // if the fetch mode is configured to "Header"
             // then lets look for an X-fondu-Resource header
             // in the content_source response and use that to fetch
