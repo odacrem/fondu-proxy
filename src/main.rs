@@ -69,7 +69,9 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
     // request the base page from content_source
     // in theory this will auto decompress responses
     // https://developer.fastly.com/learning/concepts/compression/
-    req.set_auto_decompress_gzip(true);
+    //TODO FIGURE OUT WHY THIS NOT WORK
+    //req.set_auto_decompress_gzip(true);
+    req.remove_header(header::ACCEPT_ENCODING);
     // send the request to content_source backend
     let csr_start = Instant::now();
     let mut content_source_resp = req.send(CONTENT_SOURCE_BACKEND)?;
@@ -121,7 +123,10 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                             rr.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
                             rr
                         }
-                        _ => content_source_resp,
+                        _ => {
+                            println!("error fetching:{}", fondu_resp_status);
+                            content_source_resp
+                        },
                     }
                 }
                 None => content_source_resp,
@@ -161,7 +166,9 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError
     fondu_req.set_pass(true);
     // in theory this will auto decompress responses
     // https://developer.fastly.com/learning/concepts/compression/
-    fondu_req.set_auto_decompress_gzip(true);
+    //fondu_req.set_auto_decompress_gzip(true);
+    //TODO FIGURE OUT WHY THIS NOT WORK
+    fondu_req.remove_header(header::ACCEPT_ENCODING);
     // send the request async so we can move on to requesting the content_source resource
     fondu_req.send_async(FONDU_BACKEND)
 }
