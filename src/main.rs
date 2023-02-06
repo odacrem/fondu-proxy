@@ -1,9 +1,6 @@
 use fastly::http::{header, HeaderValue, Method, StatusCode};
 use fastly::{ConfigStore, Error, Request, Response, Body};
 use fastly::http::request::{PendingRequest, SendError};
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
-use std::io::Write;
 use std::time::{Instant};
 use regex::Regex;
 // include fondu module src/fondu.rs
@@ -76,7 +73,7 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
 
     // send the request to content_source backend
     let csr_start = Instant::now();
-    let content_source_resp = req.send(CONTENT_SOURCE_BACKEND)?;
+    let mut content_source_resp = req.send(CONTENT_SOURCE_BACKEND)?;
     println!("Wait for content: {:?}", csr_start.elapsed());
     // examine the response
     // only text/html responses are to be rewritten
@@ -130,21 +127,23 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                 }
                 None => content_source_resp,
             };
+            // use faslty dynamic compression
+            // see --> https://developer.fastly.com/learning/concepts/compression/
+            content_source_resp.set_header("x-compress-hint", "on");
             // for demo lets make sure responses are not cached in any
             // upstream caches or the browser
-            content_source_resp.set_header(
-                "Cache-Control",
-                HeaderValue::from_static("private, max-age=0, no-cache, no-store, must-revalidate"),
+            content_source_resp.set_header("Cache-Control",
+                "private, max-age=0, no-cache, no-store, must-revalidate"
             );
-            // all good, send along the response
-            Ok(compress_response(content_source_resp)?)
-        }
-        // if text response then compress
-        "text/css" | "text/javscript" | "application/javascript" | "application/json" => {
-            Ok(compress_response(content_source_resp)?)
-        }
+            Ok(content_source_resp)
+        },
         // otherwise just return unmodified resonse
-        _ => Ok(content_source_resp),
+        _ => {
+            // use faslty dynamic compression
+            // see --> https://developer.fastly.com/learning/concepts/compression/
+            content_source_resp.set_header("x-compress-hint", "on");
+            Ok(content_source_resp)
+        },
     }
 }
 
@@ -154,27 +153,6 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
         Some(h) => h.to_str().unwrap_or(""),
         None => "",
     }
-}
-
-// compress a response and set headers
-// assumes "accept-encoding: deflate"
-// todo handle other compression types, etc
-fn compress_response(mut resp: Response) -> Result<Response, Error> {
-    let body = resp.take_body();
-    let gzip_body = compress_body(body).unwrap();
-    //let mut modified_resp = Response::from_body(gzip_body);
-    resp.set_body(gzip_body);
-    resp
-        .set_header("CONTENT-ENCODING", HeaderValue::from_static("deflate"));
-    Ok(resp)
-}
-
-// compress the body using flate2/zlib
-fn compress_body(body: fastly::http::body::Body) -> Result<fastly::http::body::Body, Error> {
-    let mut e = ZlibEncoder::new(Vec::new(), Compression::default());
-    e.write_all(&body.into_bytes())?;
-    let gzip_body = Body::from(e.finish().unwrap());
-    Ok(gzip_body)
 }
 
 fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError> {
