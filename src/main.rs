@@ -67,10 +67,9 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
 
 
     // request the base page from content_source
-    // remove accept-encoding to ensure no gzip
-    // since we will be parsing the html response
-    req.remove_header(header::ACCEPT_ENCODING);
-
+    // in theory this will auto decompress responses
+    // https://developer.fastly.com/learning/concepts/compression/
+    req.set_auto_decompress_gzip(true);
     // send the request to content_source backend
     let csr_start = Instant::now();
     let mut content_source_resp = req.send(CONTENT_SOURCE_BACKEND)?;
@@ -157,12 +156,12 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
 
 fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError> {
     let mut fondu_req = Request::get(fondu_uri);
-    fondu_req.set_pass(true);
-    fondu_req.remove_header(header::ACCEPT_ENCODING);
     // for this demo let's make sure not to cache responses from fondu
     // in future we would leverage sensible cache policy
-    // redundant given the fastly backend config matches
-    //fondu_req.set_header("Host", HeaderValue::from_static(FONDU_BACKEND_HOST));
+    fondu_req.set_pass(true);
+    // in theory this will auto decompress responses
+    // https://developer.fastly.com/learning/concepts/compression/
+    fondu_req.set_auto_decompress_gzip(true);
     // send the request async so we can move on to requesting the content_source resource
     fondu_req.send_async(FONDU_BACKEND)
 }
