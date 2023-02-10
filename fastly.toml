@@ -26,7 +26,7 @@ name = "fondu-proxy-rust"
 		[local_server.backends.content]
 			url = "http://localhost:3000/"
 		[local_server.backends.fondu]
-			url = "localhost:4000"
+			url = "localhost:4000/"
 		[local_server.dictionaries]
 			[local_server.dictionaries.config]
 				format = "inline-toml"
