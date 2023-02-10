@@ -1,4 +1,4 @@
-# Fondu Proxy
+# Fondu Proxy Edge Site HTML Rewriter
 
 ## Experiments in re-writing html content at the edge.
 ### using Rust and Fastly's Compute@Edge platform
@@ -11,11 +11,11 @@ Includes
 
 #### What?
 
-When Fondu Proxy receives a request for a web page e.g.
+When Fondu Proxy receives a request for a web page e.g. to
 https://my-front-page.com, it makes 2
-subrequests (in parallel):
+asynchronous subrequests
 
-a) to the content source backend (ie ... https://my-front-page.com)
+a) to the content source backend (ie the backend for https://my-front-page.com)
 
 
 
