@@ -1,6 +1,5 @@
-# Fondu Proxy Edge Site HTML Rewriter
+# Fondu Proxy - Experiments in re-writing html content at the edge.
 
-## Experiments in re-writing html content at the edge.
 ### Good times using Rust and Fastly's Compute@Edge platform
 
 Fondu Proxy is a Fastly Compute@Edge package that will "stitch" content
