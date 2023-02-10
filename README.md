@@ -61,8 +61,7 @@ Requests are made asynchronously to these 2 backends, leveraging all the
 caching goodness provided by Fastly (e.g. stale-while-invalidate
 directives, etc).
 
-Then Fondu Proxy makes use of Cloudflares lol_html "Low Output Latency streaming
-HTML rewriter/parser with CSS-selector based API." to stream the HTML
+Then Fondu Proxy makes use of Cloudflares [lol_html crate](https://docs.rs/lol_html/latest/lol_html/) to stream the HTML
 returned from the Content Source and follow the directives sent from the
 Component Source.
 
