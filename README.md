@@ -50,7 +50,7 @@ Fondu Proxy will write this as
 
 ```html
 <div>
-  <p id='foo'><b>Hi, I am the replacement</p>
+  <p id='foo'><b>Hi, I am the replacement</b></p>
 </div>
 ```
 
