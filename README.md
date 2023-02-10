@@ -91,6 +91,6 @@ otherwise personalize otherwise static content.
 
 This could be a useful pattern where: 
 
-a) your backend is otherwise static
-b) your backend is a legacy webapp that is hard/difficult/risky to customize
-c) a parallel team wants to quickly run some experiments but coordination costs make it too challenging to modify your backend
+- your backend is otherwise static
+- your backend is a legacy webapp that is hard/difficult/risky to customize
+- a parallel team wants to quickly run some experiments but coordination costs make it too challenging to modify your backend
