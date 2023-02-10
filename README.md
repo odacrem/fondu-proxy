@@ -46,7 +46,7 @@ e.g if the Content Source backend has this as its markup
 </div>
 ```
 
-Fondu Proxy will write this as
+Fondu Proxy will rewrite this as
 
 ```html
 <div>
