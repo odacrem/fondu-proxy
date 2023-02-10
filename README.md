@@ -9,7 +9,7 @@ Includes
 
 ### What?, How, Why
 
-####What?
+#### What?
 
 When Fondu Proxy receives a request for a web page e.g.
 https://my-front-page.com, it makes 2
@@ -21,6 +21,7 @@ b) to the "component source" backend
 The component source backend is any http server that will respond with a
 json struct like this:
 
+```json
 [
   {
     selector: ".foo",
@@ -29,22 +30,26 @@ json struct like this:
   },
   ...
 ]
+```
 
 The FonduProxy will then process all the directives sent by the
 Component Backend.
 
 e.g if the Content Source backend has this as its markup
 
+```html
 <div>
   <p id='foo'>Hi, I am the original</b>
 </div>
+```
 
 Fondu Proxy will write this as
 
+```html
 <div>
   <p id='foo'><b>Hi, I am the replacement</p>
 </div>
-
+```
 
 ### How
 
