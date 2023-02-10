@@ -26,7 +26,7 @@ json struct like this:
 ```
 [
   {
-    selector: ".foo",
+    selector: "#foo",
     op: "replace",
     html: "<b>Hi, I am a replacement</b>"
   },
