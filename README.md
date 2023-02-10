@@ -81,9 +81,16 @@ But also, this sort of pattern could be useful for:
 - doing a/b testing at the edge, etc
 
 
-The idea is that since the Component Source can be an app server
-and since the original request (with all the original request headers,
-cookies, etc) will be sent to it, the Component Source can use the magic
-of logic, ML, etc to _decide_ what content to add/update/replace. As
-such it can insert banners, notifications, personalization, etc or
+The idea is that the Component Source can be an app server
+that will receive all the original request headers,
+cookies, etc as the request to the Content Source. The Component Source can use the magic
+of logic, ML, etc to _decide_ what content to add/update/replace. 
+
+As such it can insert banners, notifications, personalization, etc or
 otherwise personalize otherwise static content.
+
+This could be a useful pattern where: 
+
+a) your backend is otherwise static
+b) your backend is a legacy webapp that is hard/difficult/risky to customize
+c) a parallel team wants to quickly run some experiments but coordination costs make it too challenging to modify your backend
