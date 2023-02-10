@@ -1,4 +1,6 @@
-# Fondu Proxy - Experiments in re-writing html content at the edge.
+# Fondu Proxy
+
+## Experiments in re-writing html content at the edge.
 
 ### Good times using Rust and Fastly's Compute@Edge platform
 
