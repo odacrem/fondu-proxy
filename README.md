@@ -16,6 +16,9 @@ https://my-front-page.com, it makes 2
 subrequests (in parallel):
 
 a) to the content source backend (ie ... https://my-front-page.com)
+
+
+
 b) to the "component source" backend
 
 The component source backend is any http server that will respond with a
