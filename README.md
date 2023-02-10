@@ -21,7 +21,7 @@ b) to the "component source" backend
 The component source backend is any http server that will respond with a
 json struct like this:
 
-```json
+```
 [
   {
     selector: ".foo",
