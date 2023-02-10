@@ -81,12 +81,12 @@ But also, this sort of pattern could be useful for:
 
 
 The idea is that the Component Source can be an app server
-that will receive all the original request headers,
-cookies, etc as the request to the Content Source. The Component Source can use the magic
+that will receive all the same request headers,
+cookies, etc as the request to the Content Source. The Component Source can then use the magic
 of logic, ML, etc to _decide_ what content to add/update/replace. 
 
-As such it can insert banners, notifications, personalization, etc or
-otherwise personalize otherwise static content.
+As such it can insert banners, notifications, etc and/or
+personalize otherwise static content.
 
 This could be a useful pattern where: 
 
