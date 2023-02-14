@@ -4,7 +4,7 @@
 
 Fondu Proxy is a Fastly Compute@Edge package that will "stitch" content
 into a source page, at the edge. It is like parallel Edge Side
-Includes.
+Includes. 
 
 ### What?, How, Why
 
