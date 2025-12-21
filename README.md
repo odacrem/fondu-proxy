@@ -68,27 +68,36 @@ If there are any errors, or timeouts, etc fetching directives from the
 Component Source then the original (ie unaltered response) from the
 Content Source is returned.
 
-### Why?
+### Why Fondu Proxy? (Key Benefits)
 
-Mostly to learn Rust and Fastly's Compute@Edge platform.
+Fondu Proxy solves the problem of "dynamic personalization at the edge" without sacrificing performance or reliability.
 
-But also, this sort of pattern could be useful for:
+#### 1. Zero-Latency Updates (Stale-While-Revalidate)
+Fondu Proxy supports `stale-while-revalidate` caching for the `fondu` backend.
+*   **User Experience**: Users see content immediately (served from cache).
+*   **Freshness**: The cache updates in the background.
+*   **Stability**: If the backend is slow or down, Fastly serves the stale content (via `stale-if-error`), ensuring 100% uptime.
 
-- stitching in advertising at the edge
-- doing personalization at the edge
-- doing a/b testing at the edge, etc
+#### 2. "Fail Open" Reliability
+What happens if the `fondu` backend crashes or times out?
+*   **Fondu Way**: The proxy catches the error and streams the **original, unaltered content** to the user.
+*   **Benefit**: The worst-case scenario is simply that the user sees the generic version of the page, not a broken one.
 
+#### 3. Parallel Fetching (ESI-like)
+The proxy treats the "Directives" (JSON) and "Content" (HTML) as parallel streams.
+*   It initiates the fetch for personalization instructions *immediately*, often before fetching the content.
+*   It does **not** wait for the standard backend to finish before starting the personalization check.
 
-The idea is that the Component Source can be an app server
-that will receive all the same request headers,
-cookies, etc as the request to the Content Source. The Component Source can then use the magic
-of logic, ML, etc to _decide_ what content to add/update/replace. 
+#### 4. True Streaming Architecture (O(1) Memory)
+Unlike naive middlewares that buffer the entire HTML response to modify it:
+*   **Fondu Proxy** uses a streaming HTML rewriter (`lol_html`).
+*   It processes bytes as they arrive and sends them to the client immediately.
+*   **Result**: Time-to-First-Byte (TTFB) is dominated only by your slowest backend, with near-zero overhead from the proxy itself, and constant memory usage regardless of page size.
 
-As such it can insert banners, notifications, etc and/or
-personalize otherwise static content.
+### Use Cases
 
-This could be a useful pattern where: 
-
-- your backend is otherwise static
-- your backend is a legacy webapp that is hard/difficult/risky to customize
-- a parallel team wants to quickly run some experiments but coordination costs make it too challenging to modify your backend
+This pattern is ideal for:
+-   **A/B Testing**: Injecting test variants without client-side flicker.
+-   **Personalization**: Adding "Welcome, Pablo" or cart counts to cached static pages.
+-   **Ad Injection**: Stitching dynamic ads into cached articles.
+-   **Legacy App Augmentation**: Modifying a hard-to-change legacy backend safely from the edge.

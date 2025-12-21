@@ -180,9 +180,8 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
 
 fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, Box<SendError>> {
     let mut fondu_req = Request::get(fondu_uri);
-    // for this demo let's make sure not to cache responses from fondu
-    // in future we would leverage sensible cache policy
-    fondu_req.set_pass(true);
+    // We leverage the backend's Cache-Control headers for SWR/SIE automatically
+    // fondu_req.set_pass(true);
     // in theory this will auto decompress responses
     // https://developer.fastly.com/learning/concepts/compression/
     //fondu_req.set_auto_decompress_gzip(true);
