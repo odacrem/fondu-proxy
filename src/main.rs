@@ -118,21 +118,34 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                     // that should be used to ensure that we don't wait more than an acceptable
                     // amount of time to fetch data
                     let start = Instant::now();
-                    let fondu_resp = fondu_req.wait()?;
-                    println!("Wait for fondu: {:?}", start.elapsed());
-                    let fondu_resp_status = fondu_resp.get_status();
-                    // lets check the the response code from fondu
-                    // only proceed with an OK resonse
-                    match fondu_resp_status {
-                        StatusCode::OK => {
-                            let mut rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
-                            rr.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
-                            rr
+                    
+                    // FAIL OPEN: If fondu fails (timeout, network), return original content
+                    match fondu_req.wait() {
+                        Ok(fondu_resp) => {
+                            println!("Wait for fondu: {:?}", start.elapsed());
+                            let fondu_resp_status = fondu_resp.get_status();
+                            // lets check the the response code from fondu
+                            // only proceed with an OK resonse
+                            match fondu_resp_status {
+                                StatusCode::OK => {
+                                    // Use proper error handling, but here rewrite_response failure 
+                                    // should implementation-wise probably also fail open?
+                                    // Currently rewrite_response errors propagate.
+                                    // For now, let's keep rewrite_response propogation as it's logic error not network.
+                                    let mut rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
+                                    rr.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
+                                    rr
+                                }
+                                _ => {
+                                    println!("error fetching:{}", fondu_resp_status);
+                                    content_source_resp
+                                },
+                            }
                         }
-                        _ => {
-                            println!("error fetching:{}", fondu_resp_status);
-                            content_source_resp
-                        },
+                        Err(e) => {
+                             println!("Failed to fetch fondu data (Fail Open): {}", e);
+                             content_source_resp
+                        }
                     }
                 }
                 None => content_source_resp,
