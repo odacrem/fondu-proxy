@@ -52,8 +52,8 @@ impl Renderer {
 
     // set up the element handlers for each component list
     // in the fondu_page data
-    fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
-        let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
+    fn setup_element_handlers(&mut self) -> Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> {
+        let mut handlers: Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> = Vec::new();
         for component_list in self.fondu_page.selectors.iter() {
             let selector : Cow<Selector>  =  Cow::Owned(component_list.selector.parse().unwrap());
             let components = component_list.components.as_slice();

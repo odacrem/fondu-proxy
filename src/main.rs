@@ -201,7 +201,7 @@ fn rewrite_response(
 
 
     //return the content_source page with fondu components inserted
-    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body).unwrap();
+    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body);
 
     Ok(modified_content_source_resp)
 }
