@@ -23,8 +23,8 @@ serve: dotenv
 	fastly compute serve --addr 127.0.0.1:4000
 
 test:
-	cargo wasi test
+	CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime" cargo test --target wasm32-wasip1
 
 test_output:
-	cargo wasi test -- --nocapture
+	CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime" cargo test --target wasm32-wasip1 -- --nocapture
 
