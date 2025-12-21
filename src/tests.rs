@@ -148,3 +148,51 @@ fn test_invalid_selector() {
     // Since selector is invalid, it is skipped, so output equals input
     assert_eq!(res.unwrap(), "<div>content</div>");
 }
+
+#[test]
+fn test_render_large_payload() {
+    let data = setup_test_data("replace");
+    let fondu_page = fondu::Page::from_json_str(&data).unwrap();
+    let mut renderer = fondu::Renderer::new(fondu_page);
+    
+    // Create a payload > 500 bytes (larger than 100 byte buffer)
+    // Target element is <div id='foo'>first</div>
+    // We want it to cross buffer boundaries potentially
+    let padding = "a".repeat(200);
+    // padding (200) + target + padding (200)
+    let s = format!("{}<div id='foo'>first</div>{}", padding, padding);
+    let src_body = s.as_bytes();
+    
+    let result = renderer.render(src_body).unwrap();
+    
+    // Expected output should have the replacement in the middle
+    let expected = format!("{}<div id='foo'><b>second</b>\n<i>third</i></div>{}", padding, padding);
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn test_multiple_selectors() {
+     let data = r##"
+        {
+            "selectors": [
+                {
+                    "selector": "#first",
+                    "op": "replace",
+                    "components": [{ "_ref": "/1", "html": "ONE" }]
+                },
+                {
+                    "selector": "#second",
+                    "op": "replace",
+                    "components": [{ "_ref": "/2", "html": "TWO" }]
+                }
+            ]
+        }
+    "##;
+    let fondu_page = fondu::Page::from_json_str(data).unwrap();
+    let mut renderer = fondu::Renderer::new(fondu_page);
+    
+    let s = "<div><span id='first'>old1</span> ... <span id='second'>old2</span></div>";
+    let result = renderer.render(s.as_bytes()).unwrap();
+    
+    assert_eq!(result, "<div><span id='first'>ONE</span> ... <span id='second'>TWO</span></div>");
+}
