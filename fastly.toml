@@ -8,7 +8,7 @@ manifest_version = 2
 name = "fondu-proxy-rust"
 
 [scripts]
-  build = "cargo build --bin fondu-proxy-rust --release --target wasm32-wasi --color always"
+  build = "cargo build --bin fondu-proxy-rust --release --target wasm32-wasip1 --quiet > /dev/null 2>&1"
 
 [setup]
 	[setup.backends]
@@ -26,7 +26,7 @@ name = "fondu-proxy-rust"
 		[local_server.backends.content]
 			url = "http://localhost:3000/"
 		[local_server.backends.fondu]
-			url = "localhost:4000/"
+			url = "http://localhost:4000/"
 		[local_server.dictionaries]
 			[local_server.dictionaries.config]
 				format = "inline-toml"

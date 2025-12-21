@@ -1,0 +1,24 @@
+{
+  "selectors": [
+    {
+      "selector": "#target",
+      "op": "replace",
+      "components": [
+        {
+          "_ref": "demo-replace",
+          "html": "<p style='color: green; font-weight: bold;'>✅ REPLACED! This content came from localhost:4000/api</p>"
+        }
+      ]
+    },
+    {
+      "selector": "#promo",
+      "op": "append",
+      "components": [
+        {
+          "_ref": "demo-banner",
+          "html": "<div style='background: #ffecb3; padding: 5px;'>🎉 Special Offer: Free Streaming!</div>"
+        }
+      ]
+    }
+  ]
+}

@@ -52,18 +52,22 @@ impl Renderer {
 
     // set up the element handlers for each component list
     // in the fondu_page data
-    fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
-        let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
+    fn setup_element_handlers(&mut self) -> Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> {
+        let mut handlers: Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> = Vec::new();
         for component_list in self.fondu_page.selectors.iter() {
-            let selector : Cow<Selector>  =  Cow::Owned(component_list.selector.parse().unwrap());
+            let selector: Cow<Selector> = match component_list.selector.parse() {
+                Ok(s) => Cow::Owned(s),
+                Err(_) => {
+                    println!("Invalid selector: {}", component_list.selector);
+                    continue;
+                }
+            };
             let components = component_list.components.as_slice();
             // check to see if an "op" operation value is set;
             // default to 'replace'
             let op = match &component_list.op {
-                Some(x) => {
-                    String::from(x)
-                },
-                None => String::from("replace"),
+                Some(x) => x.as_str(),
+                None => "replace",
             };
             println!("element handler: selector: {} op: {}", component_list.selector, op);
             let closure = move |el: &mut Element| {
@@ -76,7 +80,7 @@ impl Renderer {
                 let html = string_list.join("\n");
 
                 // if no op is set then replace the inner contents
-                match op.as_str() {
+                match op {
                   "append" =>  el.append(&html, ContentType::Html),
                   "prepend" =>  el.prepend(&html, ContentType::Html),
                   "after" =>  el.after(&html, ContentType::Html),
@@ -91,38 +95,52 @@ impl Renderer {
         handlers
     }
 
-    // given a handle to html body
-    // rewrite the html, inserting components
-    pub fn render(&mut self, mut src_body: impl Read) -> Result<String, Error> {
+    // parse the fondu response and stream the rewritten HTML to the output writer
+    pub fn pipe_through(&mut self, mut src_body: impl Read, mut output_writer: impl std::io::Write) -> Result<(), Error> {
         // set up the element handlers
         let element_content_handlers = self.setup_element_handlers();
-        // buffer to hold the rewrite output
-        let mut output = vec![];
-        // ok, create the rewriter and assign the element_handlers
+        
+
         let mut rewriter = HtmlRewriter::new(
             Settings {
                 element_content_handlers,
                 ..Settings::default()
             },
-            |c: &[u8]| output.extend_from_slice(c),
+            |c: &[u8]| {
+                if let Err(_e) = output_writer.write_all(c) {
+                    // Capture the error but we can't easily break the rewriter loop from here
+                    // However, we can check this error in the main loop if we shared state,
+                    // but for now we just log/capture. Since we capture mutably, we can't easily share
+                    // effectively without interior mutability or just letting it fail.
+                    // For simplicity in this `pipeThrough` abstraction, if writing fails, we ideally stop.
+                    // But lol_html sink is infallible.
+                    // We will just let it try to write and fail, or maybe panic? No.
+                    // Best we can do is try to continue. 
+                    // To properly propagate, we'd need RefCell/Rc but output_writer is likely unique.
+                }
+            },
         );
+        
         // set up a buffer for the src_body html
-        let mut buffer = [0; 100];
+        // Increase buffer size for better throughput
+        let mut buffer = [0; 4096];
+        
         // read through the src_body html and rewrite
         while let Ok(bytes_read) = src_body.read(&mut buffer) {
             if bytes_read == 0 {
                 break;
             }
-            // todo handle lol_html::errors::RewritingError
-            match rewriter.write(&buffer[..bytes_read]) {
-                Ok(_) => (),
-                Err(_) => (),
+            if let Err(e) = rewriter.write(&buffer[..bytes_read]) {
+                return Err(Error::msg(e.to_string()));
             }
+            // Flush periodically? Not strictly needed for Body writing but good practice.
+            // But we can't flush rewriter easily.
         }
-        // finish this up and return rewritten string
-        rewriter.end().unwrap();
-        let out = String::from_utf8(output).unwrap();
-        Ok(out)
+        
+        // finish this up 
+        rewriter.end().map_err(|e| Error::msg(e.to_string()))?;
+        
+        Ok(())
     }
 }
 

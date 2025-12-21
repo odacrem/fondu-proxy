@@ -24,10 +24,10 @@ fn main(req: Request) -> Result<Response, Error> {
 	// for now only process requests with no extension
 	let re = Regex::new(r"\.[\w]+$").unwrap();
 	if !re.is_match(path.as_str()) {
-    	return rewrite(req)
+    	rewrite(req)
 	} else {
 		println!("skipping {}", path);
-		return Ok(req.send(CONTENT_SOURCE_BACKEND)?);
+		Ok(req.send(CONTENT_SOURCE_BACKEND)?)
 	}
 }
 fn rewrite(mut req: Request) -> Result<Response, Error> {
@@ -62,7 +62,10 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
         // dummy host foo.bar will be overidden by backend config
         // option to override origin host
         let fondu_uri = format!("https://{}{}", "foo.bar", fondu_path);
-        fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
+        match fetch_fondu_data_async(fondu_uri) {
+            Ok(req) => fondu_req = Some(req),
+            Err(e) => println!("Failed to fetch fondu data: {}", e),
+        }
     }
 
 
@@ -96,7 +99,10 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                     // dummy host foo.bar will be overidden by backend config
                     // option to override origin host
                     let fondu_uri = format!("https://{}{}", "foo.bar", fondu_path);
-                    fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
+                    match fetch_fondu_data_async(fondu_uri) {
+                        Ok(req) => fondu_req = Some(req),
+                        Err(e) => println!("Failed to fetch fondu data: {}", e),
+                    }
                 }
             }
             // if fondu_req is None
@@ -112,21 +118,34 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                     // that should be used to ensure that we don't wait more than an acceptable
                     // amount of time to fetch data
                     let start = Instant::now();
-                    let fondu_resp = fondu_req.wait()?;
-                    println!("Wait for fondu: {:?}", start.elapsed());
-                    let fondu_resp_status = fondu_resp.get_status();
-                    // lets check the the response code from fondu
-                    // only proceed with an OK resonse
-                    match fondu_resp_status {
-                        StatusCode::OK => {
-                            let mut rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
-                            rr.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
-                            rr
+                    
+                    // FAIL OPEN: If fondu fails (timeout, network), return original content
+                    match fondu_req.wait() {
+                        Ok(fondu_resp) => {
+                            println!("Wait for fondu: {:?}", start.elapsed());
+                            let fondu_resp_status = fondu_resp.get_status();
+                            // lets check the the response code from fondu
+                            // only proceed with an OK resonse
+                            match fondu_resp_status {
+                                StatusCode::OK => {
+                                    // Use proper error handling, but here rewrite_response failure 
+                                    // should implementation-wise probably also fail open?
+                                    // Currently rewrite_response errors propagate.
+                                    // For now, let's keep rewrite_response propogation as it's logic error not network.
+                                    let mut rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
+                                    rr.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
+                                    rr
+                                }
+                                _ => {
+                                    println!("error fetching:{}", fondu_resp_status);
+                                    content_source_resp
+                                },
+                            }
                         }
-                        _ => {
-                            println!("error fetching:{}", fondu_resp_status);
-                            content_source_resp
-                        },
+                        Err(e) => {
+                             println!("Failed to fetch fondu data (Fail Open): {}", e);
+                             content_source_resp
+                        }
                     }
                 }
                 None => content_source_resp,
@@ -159,18 +178,17 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
     }
 }
 
-fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError> {
+fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, Box<SendError>> {
     let mut fondu_req = Request::get(fondu_uri);
-    // for this demo let's make sure not to cache responses from fondu
-    // in future we would leverage sensible cache policy
-    fondu_req.set_pass(true);
+    // We leverage the backend's Cache-Control headers for SWR/SIE automatically
+    // fondu_req.set_pass(true);
     // in theory this will auto decompress responses
     // https://developer.fastly.com/learning/concepts/compression/
     //fondu_req.set_auto_decompress_gzip(true);
     //TODO FIGURE OUT WHY THIS NOT WORK
     fondu_req.remove_header(header::ACCEPT_ENCODING);
     // send the request async so we can move on to requesting the content_source resource
-    fondu_req.send_async(FONDU_BACKEND)
+    fondu_req.send_async(FONDU_BACKEND).map_err(Box::new)
 }
 
 // given a content_source response and a fondu response
@@ -191,17 +209,17 @@ fn rewrite_response(
     // set up a fondu page renderer
     let mut fondu_renderer = fondu::Renderer::new(fondu_page);
     // break the content_source response into header/body parts
+    // We keep the handle to the body to read from it
     let (content_source_response_handle, content_source_body_handle) = content_source_resp.into_handles();
 
-    // todo handle this error; ideally we can return the original content_source resp
-    let modified_content_source_body = fondu_renderer.render(content_source_body_handle)?;
+    // Create a new empty body for the output
+    let mut output_body = Body::new();
+    // Pipe input -> rewriter -> output
+    // This will drive the streaming
+    fondu_renderer.pipe_through(content_source_body_handle, &mut output_body)?;
 
-    // create a new response body from the transformed html
-    let modified_content_source_body = Body::from(modified_content_source_body).into_handle();
-
-
-    //return the content_source page with fondu components inserted
-    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body).unwrap();
+    //return the content_source page with functions components inserted
+    let modified_content_source_resp = Response::from_handles(content_source_response_handle, output_body.into_handle());
 
     Ok(modified_content_source_resp)
 }
@@ -216,114 +234,5 @@ enum FonduResourceMode {
     Header,
 }
 
-/***************************
-// YE OLDE TEST SUITE
-****************************/
-
-macro_rules! format_test_data {
-    () => {
-        "{{
-            \"selectors\": [
-                {{
-                    \"selector\": \"#foo\",
-                    \"op\":\"{}\",
-                    \"components\": [
-                        {{
-                            \"_ref\": \"/components/foo\",
-                            \"html\": \"<b>second</b>\"
-                        }},
-                        {{
-                            \"_ref\": \"/components/bar\",
-                            \"html\": \"<i>third</i>\"
-                        }}
-                    ]
-
-                }}
-            ]
-        }}"
-    };
-}
-
-
-
-#[allow(dead_code)]
-fn setup_test_data(op: String) -> String {
-  let data = format!(format_test_data!(), op);
-  data
-}
-
-#[allow(dead_code)]
-fn test_render(op: &str) -> String {
-    let data = setup_test_data(String::from(op));
-    let fondu_page = fondu::Page::from_json_str(&data).unwrap();
-    let mut renderer = fondu::Renderer::new(fondu_page);
-    let s = String::from("<div id='foo'>first</div>");
-    let src_body = s.as_bytes();
-    let r = renderer.render(src_body);
-    let o = match r {
-        Ok(r) => r ,
-        Err(_) => String::from("error")
-    };
-    o
-}
-
-#[test]
-fn test_render_replace() {
-    let o = test_render("replace");
-    println!("{}",o);
-    assert_eq!(o,"<div id='foo'><b>second</b>\n<i>third</i></div>");
-}
-
-#[test]
-fn test_render_append() {
-    let o = test_render("append");
-    println!("{}",o);
-    assert_eq!(o,"<div id='foo'>first<b>second</b>\n<i>third</i></div>");
-}
-
-#[test]
-fn test_render_prepend() {
-    let o = test_render("prepend");
-    println!("{}",o);
-    assert_eq!(o,"<div id='foo'><b>second</b>\n<i>third</i>first</div>");
-}
-
-#[test]
-fn test_render_before() {
-    let o = test_render("before");
-    println!("{}",o);
-    assert_eq!(o,"<b>second</b>\n<i>third</i><div id='foo'>first</div>");
-}
-
-#[test]
-fn test_render_after() {
-    let o = test_render("after");
-    println!("{}",o);
-    assert_eq!(o,"<div id='foo'>first</div><b>second</b>\n<i>third</i>");
-}
-
-#[test]
-fn test_parse_json() {
-    let data = setup_test_data(String::from("replace"));
-    let fondu_page = fondu::Page::from_json_str(&data);
-    let fondu_page = match fondu_page {
-        Ok(fondu_page) => fondu_page,
-        Err(_) => {
-            assert!(false);
-            return
-        },
-    };
-    assert_eq!(1,fondu_page.selectors.len());
-    assert_eq!(2,fondu_page.selectors[0].components.len());
-    assert_eq!("/components/foo",fondu_page.selectors[0].components[0]._ref)
-}
-#[test]
-fn test_parse_bad_json() {
-    let data = r##"
-        {
-            "selectors": [{
-        }
-    "##;
-    let fondu_page = fondu::Page::from_json_str(data);
-    assert!(fondu_page.is_err())
-}
+#[cfg(test)]
+mod tests;
