@@ -197,18 +197,17 @@ fn rewrite_response(
     // set up a fondu page renderer
     let mut fondu_renderer = fondu::Renderer::new(fondu_page);
     // break the content_source response into header/body parts
+    // We keep the handle to the body to read from it
     let (content_source_response_handle, content_source_body_handle) = content_source_resp.into_handles();
 
-    // todo handle this error; ideally we can return the original content_source resp
-    let modified_content_source_body = fondu_renderer.render(content_source_body_handle)?;
+    // Create a new empty body for the output
+    let mut output_body = Body::new();
+    // Pipe input -> rewriter -> output
+    // This will drive the streaming
+    fondu_renderer.pipe_through(content_source_body_handle, &mut output_body)?;
 
-    // create a new response body from the transformed html
-    let modified_content_source_body = Body::from(modified_content_source_body).into_handle();
-
-
-    //return the content_source page with fondu components inserted
-    //return the content_source page with fondu components inserted
-    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body);
+    //return the content_source page with functions components inserted
+    let modified_content_source_resp = Response::from_handles(content_source_response_handle, output_body.into_handle());
 
     Ok(modified_content_source_resp)
 }

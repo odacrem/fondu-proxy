@@ -35,10 +35,11 @@ fn test_render(op: &str) -> String {
     let mut renderer = fondu::Renderer::new(fondu_page);
     let s = String::from("<div id='foo'>first</div>");
     let src_body = s.as_bytes();
-    let r = renderer.render(src_body);
+    let mut output = Vec::new();
+    let r = renderer.pipe_through(src_body, &mut output);
     match r {
-        Ok(r) => r ,
-        Err(_) => String::from("error")
+         Ok(_) => String::from_utf8(output).unwrap(),
+         Err(_) => String::from("error")
     }
 }
 
@@ -143,10 +144,11 @@ fn test_invalid_selector() {
     let fondu_page = fondu::Page::from_json_str(data).unwrap();
     let mut renderer = fondu::Renderer::new(fondu_page);
     let s = String::from("<div>content</div>");
-    let res = renderer.render(s.as_bytes());
+    let mut output = Vec::new();
+    let res = renderer.pipe_through(s.as_bytes(), &mut output);
     assert!(res.is_ok());
     // Since selector is invalid, it is skipped, so output equals input
-    assert_eq!(res.unwrap(), "<div>content</div>");
+    assert_eq!(String::from_utf8(output).unwrap(), "<div>content</div>");
 }
 
 #[test]
@@ -163,7 +165,9 @@ fn test_render_large_payload() {
     let s = format!("{}<div id='foo'>first</div>{}", padding, padding);
     let src_body = s.as_bytes();
     
-    let result = renderer.render(src_body).unwrap();
+    let mut output = Vec::new();
+    renderer.pipe_through(src_body, &mut output).unwrap();
+    let result = String::from_utf8(output).unwrap();
     
     // Expected output should have the replacement in the middle
     let expected = format!("{}<div id='foo'><b>second</b>\n<i>third</i></div>{}", padding, padding);
@@ -192,7 +196,9 @@ fn test_multiple_selectors() {
     let mut renderer = fondu::Renderer::new(fondu_page);
     
     let s = "<div><span id='first'>old1</span> ... <span id='second'>old2</span></div>";
-    let result = renderer.render(s.as_bytes()).unwrap();
+    let mut output = Vec::new();
+    renderer.pipe_through(s.as_bytes(), &mut output).unwrap();
+    let result = String::from_utf8(output).unwrap();
     
     assert_eq!(result, "<div><span id='first'>ONE</span> ... <span id='second'>TWO</span></div>");
 }
