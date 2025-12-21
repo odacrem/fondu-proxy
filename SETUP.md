@@ -72,7 +72,7 @@ fastly compute build
 ### Run Unit Tests
 ```bash
 CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime" cargo test --target wasm32-wasip1
-# or (if Makefile is updated)
+# or using the Makefile test target
 make test
 ```
 

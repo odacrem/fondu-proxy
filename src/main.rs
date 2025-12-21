@@ -16,14 +16,17 @@ const CONTENT_SOURCE_BACKEND: &str = "content";
 // rather than from the x-fondu-resource response header
 const FONDU_RESOURCE_MODE: FonduResourceMode = FonduResourceMode::Uri;
 
+lazy_static::lazy_static! {
+    static ref RE: Regex = Regex::new(r"\.[\w]+$").unwrap();
+}
+
 #[fastly::main]
 fn main(req: Request) -> Result<Response, Error> {
     let path = String::from(req.get_path());
     // todo -- skip fondu requests for certain request patterns like .css or .jss or .jpg etc
 	// todo -- alow configuration to exclude route patterns
 	// for now only process requests with no extension
-	let re = Regex::new(r"\.[\w]+$").unwrap();
-	if !re.is_match(path.as_str()) {
+	if !RE.is_match(path.as_str()) {
     	rewrite(req)
 	} else {
 		println!("skipping {}", path);
@@ -178,7 +181,7 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
     }
 }
 
-fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, Box<SendError>> {
+fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError> {
     let mut fondu_req = Request::get(fondu_uri);
     // We leverage the backend's Cache-Control headers for SWR/SIE automatically
     // fondu_req.set_pass(true);
@@ -188,7 +191,7 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, Box<SendE
     //TODO FIGURE OUT WHY THIS NOT WORK
     fondu_req.remove_header(header::ACCEPT_ENCODING);
     // send the request async so we can move on to requesting the content_source resource
-    fondu_req.send_async(FONDU_BACKEND).map_err(Box::new)
+    fondu_req.send_async(FONDU_BACKEND)
 }
 
 // given a content_source response and a fondu response
@@ -210,18 +213,26 @@ fn rewrite_response(
     let mut fondu_renderer = fondu::Renderer::new(fondu_page);
     // break the content_source response into header/body parts
     // We keep the handle to the body to read from it
-    let (content_source_response_handle, content_source_body_handle) = content_source_resp.into_handles();
+    let (content_source_response_handle, mut content_source_body_handle) = content_source_resp.into_handles();
 
     // Create a new empty body for the output
     let mut output_body = Body::new();
+    
     // Pipe input -> rewriter -> output
-    // This will drive the streaming
-    fondu_renderer.pipe_through(content_source_body_handle, &mut output_body)?;
-
-    //return the content_source page with functions components inserted
-    let modified_content_source_resp = Response::from_handles(content_source_response_handle, output_body.into_handle());
-
-    Ok(modified_content_source_resp)
+    // We pass a mutable reference to content_source_body_handle so we don't consume it on error
+    match fondu_renderer.pipe_through(&mut content_source_body_handle, &mut output_body) {
+        Ok(_) => {
+             //return the content_source page with fondu components inserted
+             let modified_content_source_resp = Response::from_handles(content_source_response_handle, output_body.into_handle());
+             Ok(modified_content_source_resp)
+        },
+        Err(e) => {
+            println!("Rewriting failed, returning original content: {}", e);
+            // Reconstruct original response from handles
+            let original_resp = Response::from_handles(content_source_response_handle, content_source_body_handle);
+            Ok(original_resp)
+        }
+    }
 }
 
 // todo needs a better name

@@ -33,7 +33,7 @@ This document is intended for AI coding agents to quickly understand the project
 ## Key Commands
 
 - **Build**: `fastly compute build` (compiles to `.wasm` package).
-- **Test**: `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime" cargo test --target wasm32-wasip1` (runs unit tests in `src/main.rs`).
+- **Test**: `CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime" cargo test --target wasm32-wasip1` (runs unit tests).
 - **Serve**: `fastly compute serve` (spins up a local server on `localhost:4000`).
 
 ## Configuration Notes

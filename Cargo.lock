@@ -271,6 +271,7 @@ name = "fondu-proxy-rust"
 version = "0.1.0"
 dependencies = [
  "fastly",
+ "lazy_static",
  "lol_html",
  "regex",
  "serde",

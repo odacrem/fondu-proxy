@@ -1,7 +1,31 @@
 #!/bin/bash
 
-# Kill background jobs on exit
-trap 'kill $(jobs -p)' EXIT
+# Kill background jobs on exit, allowing them to shut down gracefully
+cleanup() {
+  # Get all background job PIDs, if any
+  local pids
+  pids=$(jobs -p) || return 0
+  [ -z "$pids" ] && return 0
+
+  # First, try to terminate gracefully
+  kill -TERM $pids 2>/dev/null || true
+
+  # Wait up to 5 seconds for processes to exit
+  local end=$((SECONDS + 5))
+  while kill -0 $pids 2>/dev/null; do
+    if [ "$SECONDS" -ge "$end" ]; then
+      # Force kill any remaining processes
+      kill -KILL $pids 2>/dev/null || true
+      break
+    fi
+    sleep 0.5
+  done
+
+  # Reap any finished background jobs
+  wait 2>/dev/null || true
+}
+
+trap cleanup EXIT
 
 # Silence rustup updates to prevent breaking Fastly CLI metadata parsing
 export RUSTUP_QUIET=1

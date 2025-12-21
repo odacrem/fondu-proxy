@@ -81,14 +81,7 @@ fn test_render_after() {
 #[test]
 fn test_parse_json() {
     let data = setup_test_data("replace");
-    let fondu_page = fondu::Page::from_json_str(&data);
-    let fondu_page = match fondu_page {
-        Ok(fondu_page) => fondu_page,
-        Err(_) => {
-            assert!(false);
-            return
-        },
-    };
+    let fondu_page = fondu::Page::from_json_str(&data).unwrap();
     assert_eq!(1,fondu_page.selectors.len());
     assert_eq!(2,fondu_page.selectors[0].components.len());
     assert_eq!("/components/foo",fondu_page.selectors[0].components[0]._ref)
@@ -107,22 +100,14 @@ fn test_parse_bad_json() {
 
 #[test]
 fn test_render_no_op() {
-    // Default behavior when op is missing or unrecognized should ideally be tested
-    // But since setup_test_data requires an op for string format, we can pass something unknown
-    // Or we rely on "replace" being default if we could pass None, but format string demands value.
-    // If we pass an empty string or unknown op, let's see what happens. 
-    // The code in fondu.rs defaults to "replace" if op is None, but here we inject string.
-    // The current logic in fondu.rs:
-    // let op = match &component_list.op { Some(x) => x.as_str(), None => "replace" };
-    // match op { ... _ => () } (breaks / does nothing)
-    // Wait, let's check fondu.rs again.
-    
-    // In fondu.rs:
-    // match op { "append" => ..., "replace" => ..., _ => break }
-    // If op is unknown, it breaks (does nothing).
+    // Verify behavior when the op is missing or unrecognized.
+    // setup_test_data requires an op string, so we pass an unknown value here.
+    // In fondu.rs, the operation is resolved with a wildcard match arm that
+    // defaults unknown or missing ops to "replace" behavior.
+    // This test ensures that an unrecognized op still results in a replace.
     
     let o = test_render("unknown_op");
-    // Fondu defaults to "replace" for unknown ops
+    // Fondu defaults to "replace" for unknown ops, so we expect the components to replace the content.
     assert_eq!(o, "<div id='foo'><b>second</b>\n<i>third</i></div>");
 }
 

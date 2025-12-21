@@ -47,7 +47,7 @@ The `fondu` backend must return a JSON object with the following structure:
 *   `prepend`: Adds content **inside**, at the beginning.
 *   `before`: Adds content **outside**, immediately before the element.
 *   `after`: Adds content **outside**, immediately after the element.
-returned from the Content Source and follow the directives sent from the
+These operations are applied to the HTML returned from the Content Source, following the directives sent from the
 Component Source.
 
 If there are any errors, or timeouts, etc fetching directives from the

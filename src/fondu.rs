@@ -100,23 +100,16 @@ impl Renderer {
         // set up the element handlers
         let element_content_handlers = self.setup_element_handlers();
         
-
+        let mut write_err = None;
+        
         let mut rewriter = HtmlRewriter::new(
             Settings {
                 element_content_handlers,
                 ..Settings::default()
             },
             |c: &[u8]| {
-                if let Err(_e) = output_writer.write_all(c) {
-                    // Capture the error but we can't easily break the rewriter loop from here
-                    // However, we can check this error in the main loop if we shared state,
-                    // but for now we just log/capture. Since we capture mutably, we can't easily share
-                    // effectively without interior mutability or just letting it fail.
-                    // For simplicity in this `pipeThrough` abstraction, if writing fails, we ideally stop.
-                    // But lol_html sink is infallible.
-                    // We will just let it try to write and fail, or maybe panic? No.
-                    // Best we can do is try to continue. 
-                    // To properly propagate, we'd need RefCell/Rc but output_writer is likely unique.
+                if let Err(e) = output_writer.write_all(c) {
+                    write_err = Some(e);
                 }
             },
         );
@@ -133,12 +126,18 @@ impl Renderer {
             if let Err(e) = rewriter.write(&buffer[..bytes_read]) {
                 return Err(Error::msg(e.to_string()));
             }
-            // Flush periodically? Not strictly needed for Body writing but good practice.
-            // But we can't flush rewriter easily.
         }
         
-        // finish this up 
-        rewriter.end().map_err(|e| Error::msg(e.to_string()))?;
+        // finish this up - consumes rewriter, releasing borrow on write_err
+        let res = rewriter.end();
+
+        // Check for write error first
+        if let Some(e) = write_err {
+            return Err(Error::msg(format!("Output write error: {}", e)));
+        }
+        
+        // Then check rewriter error
+        res.map_err(|e| Error::msg(e.to_string()))?;
         
         Ok(())
     }
