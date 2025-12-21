@@ -52,18 +52,22 @@ impl Renderer {
 
     // set up the element handlers for each component list
     // in the fondu_page data
-    fn setup_element_handlers(&mut self) -> Vec<(Cow<Selector>, ElementContentHandlers)> {
-        let mut handlers: Vec<(Cow<Selector>, ElementContentHandlers)> = Vec::new();
+    fn setup_element_handlers(&mut self) -> Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> {
+        let mut handlers: Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> = Vec::new();
         for component_list in self.fondu_page.selectors.iter() {
-            let selector : Cow<Selector>  =  Cow::Owned(component_list.selector.parse().unwrap());
+            let selector: Cow<Selector> = match component_list.selector.parse() {
+                Ok(s) => Cow::Owned(s),
+                Err(_) => {
+                    println!("Invalid selector: {}", component_list.selector);
+                    continue;
+                }
+            };
             let components = component_list.components.as_slice();
             // check to see if an "op" operation value is set;
             // default to 'replace'
             let op = match &component_list.op {
-                Some(x) => {
-                    String::from(x)
-                },
-                None => String::from("replace"),
+                Some(x) => x.as_str(),
+                None => "replace",
             };
             println!("element handler: selector: {} op: {}", component_list.selector, op);
             let closure = move |el: &mut Element| {
@@ -76,7 +80,7 @@ impl Renderer {
                 let html = string_list.join("\n");
 
                 // if no op is set then replace the inner contents
-                match op.as_str() {
+                match op {
                   "append" =>  el.append(&html, ContentType::Html),
                   "prepend" =>  el.prepend(&html, ContentType::Html),
                   "after" =>  el.after(&html, ContentType::Html),
@@ -114,14 +118,13 @@ impl Renderer {
                 break;
             }
             // todo handle lol_html::errors::RewritingError
-            match rewriter.write(&buffer[..bytes_read]) {
-                Ok(_) => (),
-                Err(_) => (),
+            if let Err(e) = rewriter.write(&buffer[..bytes_read]) {
+                return Err(Error::msg(e.to_string()));
             }
         }
         // finish this up and return rewritten string
-        rewriter.end().unwrap();
-        let out = String::from_utf8(output).unwrap();
+        rewriter.end().map_err(|e| Error::msg(e.to_string()))?;
+        let out = String::from_utf8(output).map_err(|e| Error::msg(e.to_string()))?;
         Ok(out)
     }
 }

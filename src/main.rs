@@ -24,10 +24,10 @@ fn main(req: Request) -> Result<Response, Error> {
 	// for now only process requests with no extension
 	let re = Regex::new(r"\.[\w]+$").unwrap();
 	if !re.is_match(path.as_str()) {
-    	return rewrite(req)
+    	rewrite(req)
 	} else {
 		println!("skipping {}", path);
-		return Ok(req.send(CONTENT_SOURCE_BACKEND)?);
+		Ok(req.send(CONTENT_SOURCE_BACKEND)?)
 	}
 }
 fn rewrite(mut req: Request) -> Result<Response, Error> {
@@ -62,7 +62,10 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
         // dummy host foo.bar will be overidden by backend config
         // option to override origin host
         let fondu_uri = format!("https://{}{}", "foo.bar", fondu_path);
-        fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
+        match fetch_fondu_data_async(fondu_uri) {
+            Ok(req) => fondu_req = Some(req),
+            Err(e) => println!("Failed to fetch fondu data: {}", e),
+        }
     }
 
 
@@ -96,7 +99,10 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                     // dummy host foo.bar will be overidden by backend config
                     // option to override origin host
                     let fondu_uri = format!("https://{}{}", "foo.bar", fondu_path);
-                    fondu_req = Some(fetch_fondu_data_async(fondu_uri).unwrap());
+                    match fetch_fondu_data_async(fondu_uri) {
+                        Ok(req) => fondu_req = Some(req),
+                        Err(e) => println!("Failed to fetch fondu data: {}", e),
+                    }
                 }
             }
             // if fondu_req is None
@@ -159,7 +165,7 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
     }
 }
 
-fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError> {
+fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, Box<SendError>> {
     let mut fondu_req = Request::get(fondu_uri);
     // for this demo let's make sure not to cache responses from fondu
     // in future we would leverage sensible cache policy
@@ -170,7 +176,7 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError
     //TODO FIGURE OUT WHY THIS NOT WORK
     fondu_req.remove_header(header::ACCEPT_ENCODING);
     // send the request async so we can move on to requesting the content_source resource
-    fondu_req.send_async(FONDU_BACKEND)
+    fondu_req.send_async(FONDU_BACKEND).map_err(Box::new)
 }
 
 // given a content_source response and a fondu response
@@ -201,7 +207,8 @@ fn rewrite_response(
 
 
     //return the content_source page with fondu components inserted
-    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body).unwrap();
+    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body)
+            .map_err(|_| Error::msg("Failed to recombine response handles"))?;
 
     Ok(modified_content_source_resp)
 }
@@ -247,24 +254,23 @@ macro_rules! format_test_data {
 
 
 #[allow(dead_code)]
-fn setup_test_data(op: String) -> String {
+fn setup_test_data(op: &str) -> String {
   let data = format!(format_test_data!(), op);
   data
 }
 
 #[allow(dead_code)]
 fn test_render(op: &str) -> String {
-    let data = setup_test_data(String::from(op));
+    let data = setup_test_data(op);
     let fondu_page = fondu::Page::from_json_str(&data).unwrap();
     let mut renderer = fondu::Renderer::new(fondu_page);
     let s = String::from("<div id='foo'>first</div>");
     let src_body = s.as_bytes();
     let r = renderer.render(src_body);
-    let o = match r {
+    match r {
         Ok(r) => r ,
         Err(_) => String::from("error")
-    };
-    o
+    }
 }
 
 #[test]
@@ -304,7 +310,7 @@ fn test_render_after() {
 
 #[test]
 fn test_parse_json() {
-    let data = setup_test_data(String::from("replace"));
+    let data = setup_test_data("replace");
     let fondu_page = fondu::Page::from_json_str(&data);
     let fondu_page = match fondu_page {
         Ok(fondu_page) => fondu_page,
