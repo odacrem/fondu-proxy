@@ -207,8 +207,8 @@ fn rewrite_response(
 
 
     //return the content_source page with fondu components inserted
-    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body)
-            .map_err(|_| Error::msg("Failed to recombine response handles"))?;
+    //return the content_source page with fondu components inserted
+    let modified_content_source_resp = Response::from_handles(content_source_response_handle, modified_content_source_body);
 
     Ok(modified_content_source_resp)
 }
