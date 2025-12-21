@@ -20,47 +20,33 @@ a) to the content source backend (ie the backend for https://my-front-page.com)
 
 b) to the "component source" backend
 
-The component source backend is any http server that will respond with a
-json struct like this:
+### Backend API Specification
 
-```
-[
-  {
-    selector: "#foo",
-    op: "replace",
-    html: "<b>Hi, I am a replacement</b>"
-  },
-  ...
-]
-```
+The `fondu` backend must return a JSON object with the following structure:
 
-The FonduProxy will then process all the directives sent by the
-Component Backend.
-
-e.g if the Content Source backend has this as its markup
-
-```html
-<div>
-  <p id='foo'>Hi, I am the original</b>
-</div>
+```json
+{
+  "selectors": [
+    {
+      "selector": "#foo",           // CSS Selector to target
+      "op": "replace",              // Operation: replace, append, prepend, before, after
+      "components": [
+        {
+          "_ref": "promo-banner-1", // Reference ID (internal use)
+          "html": "<b>Hi, I am a replacement</b>"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-Fondu Proxy will rewrite this as
-
-```html
-<div>
-  <p id='foo'><b>Hi, I am the replacement</b></p>
-</div>
-```
-
-### How
-
-Fondu Proxy uses the Content Source and Component Source configured as Fastly backends.
-Requests are made asynchronously to these 2 backends, leveraging all the
-caching goodness provided by Fastly (e.g. stale-while-invalidate
-directives, etc).
-
-Then Fondu Proxy makes use of Cloudflares [lol_html crate](https://docs.rs/lol_html/latest/lol_html/) to stream the HTML
+#### Operations (`op`)
+*   `replace` (Default): Replaces the **inner content** of the target element.
+*   `append`: Adds content **inside**, at the end.
+*   `prepend`: Adds content **inside**, at the beginning.
+*   `before`: Adds content **outside**, immediately before the element.
+*   `after`: Adds content **outside**, immediately after the element.
 returned from the Content Source and follow the directives sent from the
 Component Source.
 
