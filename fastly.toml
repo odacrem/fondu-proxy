@@ -20,6 +20,7 @@ name = "fondu-proxy-rust"
 		[setup.dictionaries.config]
 			[setup.dictionaries.config.items]
 				[setup.dictionaries.config.items.fondu_path]
+				[setup.dictionaries.config.items.fondu_budget_ms]
 
 [local_server]
 	[local_server.backends]
@@ -32,3 +33,4 @@ name = "fondu-proxy-rust"
 				format = "inline-toml"
 				[local_server.dictionaries.config.contents]
 						"fondu_path" = "/api"
+						"fondu_budget_ms" = "50"
