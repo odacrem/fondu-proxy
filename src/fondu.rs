@@ -5,6 +5,7 @@ use lol_html::{ElementContentHandlers, HtmlRewriter, Selector, Settings};
 use serde::{Serialize, Deserialize};
 use std::io::Read;
 use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
 
 
 #[derive(Serialize, Deserialize)]
@@ -96,49 +97,58 @@ impl Renderer {
     }
 
     // parse the fondu response and stream the rewritten HTML to the output writer
-    pub fn pipe_through(&mut self, mut src_body: impl Read, mut output_writer: impl std::io::Write) -> Result<(), Error> {
+    pub fn pipe_through(&mut self, mut src_body: impl Read, output_writer: impl std::io::Write) -> Result<(), Error> {
         // set up the element handlers
         let element_content_handlers = self.setup_element_handlers();
-        
-        let mut write_err = None;
-        
+
+        // shared with the rewriter's output sink so we can flush
+        // and check for write errors between input chunks
+        let output_writer = RefCell::new(output_writer);
+        let write_err: Cell<Option<std::io::Error>> = Cell::new(None);
+
         let mut rewriter = HtmlRewriter::new(
             Settings {
                 element_content_handlers,
                 ..Settings::default()
             },
             |c: &[u8]| {
-                if let Err(e) = output_writer.write_all(c) {
-                    write_err = Some(e);
+                if let Err(e) = output_writer.borrow_mut().write_all(c) {
+                    write_err.set(Some(e));
                 }
             },
         );
-        
+
         // set up a buffer for the src_body html
         // Increase buffer size for better throughput
         let mut buffer = [0; 4096];
-        
+
         // read through the src_body html and rewrite
-        while let Ok(bytes_read) = src_body.read(&mut buffer) {
-            if bytes_read == 0 {
-                break;
-            }
+        loop {
+            let bytes_read = match src_body.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(Error::msg(format!("Input read error: {}", e))),
+            };
             if let Err(e) = rewriter.write(&buffer[..bytes_read]) {
                 return Err(Error::msg(e.to_string()));
             }
+            // send what we have so far rather than waiting for the
+            // writer's buffer to fill; stop early if the output is gone
+            if let Err(e) = output_writer.borrow_mut().flush() {
+                write_err.set(Some(e));
+            }
+            if let Some(e) = write_err.take() {
+                return Err(Error::msg(format!("Output write error: {}", e)));
+            }
         }
-        
-        // finish this up - consumes rewriter, releasing borrow on write_err
-        let res = rewriter.end();
 
-        // Check for write error first
-        if let Some(e) = write_err {
+        rewriter.end().map_err(|e| Error::msg(e.to_string()))?;
+
+        if let Some(e) = write_err.take() {
             return Err(Error::msg(format!("Output write error: {}", e)));
         }
-        
-        // Then check rewriter error
-        res.map_err(|e| Error::msg(e.to_string()))?;
-        
+
         Ok(())
     }
 }
