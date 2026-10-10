@@ -6,7 +6,7 @@
       "components": [
         {
           "_ref": "demo-replace",
-          "html": "<p style='color: green; font-weight: bold;'>✅ REPLACED! This content came from localhost:4000/api</p>"
+          "html": "<p style='color: green; font-weight: bold;'>✅ REPLACED! This content came from the fondu backend on localhost:4000</p>"
         }
       ]
     },

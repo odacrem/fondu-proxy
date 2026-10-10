@@ -1,6 +1,11 @@
 //! Fondu Proxy: stitches components from the fondu backend into HTML pages
 //! from the content backend, streaming the result to the client.
+//!
+//! Both backends act as origins for the client's request, and each one's response headers
+//! control its caching. The content response is always sent; the fondu directives are
+//! applied only if they arrive in time.
 
+mod caching;
 mod config;
 mod fondu;
 mod pending;
@@ -8,8 +13,9 @@ mod pending;
 use std::time::Instant;
 
 use fastly::handle::{BodyHandle, PendingRequestHandle};
+use fastly::http::header::{self, HeaderName};
 use fastly::http::request::SendErrorCause;
-use fastly::http::{header, Method, StatusCode};
+use fastly::http::{Method, StatusCode};
 use fastly::{mime, Error, Request, Response};
 
 use config::Config;
@@ -18,8 +24,17 @@ use fondu::Page;
 const CONTENT_BACKEND: &str = "content";
 const FONDU_BACKEND: &str = "fondu";
 
-/// Host for fondu requests; replaced by the fondu backend's host override.
-const FONDU_PLACEHOLDER_HOST: &str = "foo.bar";
+/// Headers not forwarded to fondu: its directives must be a complete, uncompressed
+/// 200 response, so conditional and range requests can't be passed on.
+const FONDU_EXCLUDED_HEADERS: [HeaderName; 7] = [
+    header::ACCEPT_ENCODING,
+    header::IF_MATCH,
+    header::IF_NONE_MATCH,
+    header::IF_MODIFIED_SINCE,
+    header::IF_UNMODIFIED_SINCE,
+    header::IF_RANGE,
+    header::RANGE,
+];
 
 // not #[fastly::main]: rewritten pages are streamed to the client
 // rather than returned as a buffered Response
@@ -33,17 +48,16 @@ fn main() {
 }
 
 fn handle(req: Request) -> Result<(), Error> {
-    // only pages are rewritten, so requests for files like .css or .jpg skip fondu
+    // only GET responses have a page to rewrite, and requests for files like .css or .jpg
+    // skip fondu; everything else goes straight to the content backend
     // todo: make the excluded routes configurable
-    if has_file_extension(req.get_path()) {
-        println!("Skipping {}", req.get_path());
+    if *req.get_method() != Method::GET || has_file_extension(req.get_path()) {
+        println!(
+            "Passing through {} {}",
+            req.get_method_str(),
+            req.get_path()
+        );
         req.send(CONTENT_BACKEND)?.send_to_client();
-        return Ok(());
-    }
-    if !matches!(*req.get_method(), Method::GET | Method::HEAD) {
-        Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
-            .with_body("This method is not allowed")
-            .send_to_client();
         return Ok(());
     }
     rewrite(req)
@@ -55,12 +69,11 @@ fn rewrite(mut req: Request) -> Result<(), Error> {
     let deadline = config.fondu_budget.map(|budget| start + budget);
 
     // start the fondu request first so it runs while we wait for the content
-    // todo: derive the fondu path from the request path so each page gets its own directives
-    let fondu = send_fondu_request(&config.fondu_path)
+    let fondu = send_fondu_request(&req, &config.fondu_path_prefix)
         .inspect_err(|e| println!("Failed to send fondu request: {e}"))
         .ok();
 
-    let label = format!("{} {}", req.get_method_str(), req.get_path());
+    let path = req.get_path().to_owned();
     // ask for an uncompressed page so it can be rewritten
     req.remove_header(header::ACCEPT_ENCODING);
     let mut content = req.send(CONTENT_BACKEND)?;
@@ -74,36 +87,44 @@ fn rewrite(mut req: Request) -> Result<(), Error> {
         content.send_to_client();
         return Ok(());
     }
-    println!("Rewriting {label}");
+    println!("Rewriting GET {path}");
 
-    // for the demo, keep pages out of downstream caches and the browser
-    content.set_header(
-        header::CACHE_CONTROL,
-        "private, max-age=0, no-cache, no-store, must-revalidate",
-    );
-
-    // fail open: without usable directives, send the page unchanged
-    match fondu.and_then(|pending| receive_page(pending, deadline)) {
-        Some(page) => stream_rewritten(content, &page),
+    // fail open: without usable directives, send the content response unchanged
+    match fondu.and_then(|pending| receive_directives(pending, deadline)) {
+        Some((fondu, page)) => stream_rewritten(content, &fondu, &page),
         None => content.send_to_client(),
     }
     Ok(())
 }
 
-fn send_fondu_request(path: &str) -> Result<PendingRequestHandle, SendErrorCause> {
-    // fondu responses are cached according to the backend's Cache-Control, including SWR/SIE
-    let mut req = Request::get(format!("https://{FONDU_PLACEHOLDER_HOST}{path}"));
-    req.remove_header(header::ACCEPT_ENCODING);
+/// Sends the client's request to fondu, as to any origin, with its path under `path_prefix`.
+/// Fondu's response headers control how its responses are cached.
+fn send_fondu_request(
+    client_req: &Request,
+    path_prefix: &str,
+) -> Result<PendingRequestHandle, SendErrorCause> {
+    let mut req = client_req.clone_without_body();
+    req.set_path(&format!(
+        "{}{}",
+        path_prefix.trim_end_matches('/'),
+        client_req.get_path()
+    ));
+    for name in FONDU_EXCLUDED_HEADERS {
+        req.remove_header(name);
+    }
     // sent with the handle API because pending::wait_until needs the raw handle
     let (req_handle, body_handle) = req.into_handles();
     req_handle.send_async(body_handle.unwrap_or_else(BodyHandle::new), FONDU_BACKEND)
 }
 
-/// Waits for the fondu response and parses its directives.
-/// Returns `None`, logging why, when the page should be sent unchanged.
-fn receive_page(pending: PendingRequestHandle, deadline: Option<Instant>) -> Option<Page> {
+/// Waits for the fondu response and parses its directives, returning them with the
+/// response's headers. Returns `None`, logging why, when the page should be sent unchanged.
+fn receive_directives(
+    pending: PendingRequestHandle,
+    deadline: Option<Instant>,
+) -> Option<(Response, Page)> {
     let waiting = Instant::now();
-    let resp = pending::wait_until(pending, deadline)
+    let mut resp = pending::wait_until(pending, deadline)
         .inspect_err(|e| println!("No fondu response (fail open): {e}"))
         .ok()?;
     println!("Wait for fondu: {:?}", waiting.elapsed());
@@ -113,16 +134,16 @@ fn receive_page(pending: PendingRequestHandle, deadline: Option<Instant>) -> Opt
         println!("Fondu responded {status} (fail open)");
         return None;
     }
-    Page::from_json(&resp.into_body_bytes())
+    let page = Page::from_json(&resp.take_body_bytes())
         .inspect_err(|e| println!("Invalid fondu data (fail open): {e}"))
-        .ok()
+        .ok()?;
+    Some((resp, page))
 }
 
 /// Streams the page to the client, applying the fondu directives as it goes.
-fn stream_rewritten(mut content: Response, page: &Page) {
+fn stream_rewritten(mut content: Response, fondu: &Response, page: &Page) {
     let body = content.take_body();
-    // the rewritten body length differs from the origin's
-    content.remove_header(header::CONTENT_LENGTH);
+    caching::combine(&mut content, fondu);
     content.set_header("x-fondu-rewrite", "true");
 
     let mut client_body = content.stream_to_client();
