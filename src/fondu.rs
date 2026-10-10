@@ -1,155 +1,213 @@
-use fastly::Error;
-//use lol_html::errors::RewritingError
+//! Fondu directives and the streaming HTML rewriter that applies them.
+
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::error::Error;
+use std::fmt;
+use std::io::{self, Read, Write};
+
+use lol_html::errors::RewritingError;
 use lol_html::html_content::{ContentType, Element};
 use lol_html::{ElementContentHandlers, HtmlRewriter, Selector, Settings};
-use serde::{Serialize, Deserialize};
-use std::io::Read;
-use std::borrow::Cow;
-use std::cell::{Cell, RefCell};
+use serde::Deserialize;
 
+/// Size of each chunk read from the source HTML. Output is flushed after each chunk.
+const CHUNK_SIZE: usize = 4096;
 
-#[derive(Serialize, Deserialize)]
+/// Directives returned by the fondu backend.
+#[derive(Debug, Deserialize)]
 pub struct Page {
-    pub selectors: Vec<ComponentList>,
+    pub selectors: Vec<Directive>,
 }
 
-impl Page {
-    // given fondu page json string
-    // parse into Page struct
-    pub fn from_json_str(json: &str) -> Result<Page, serde_json::error::Error> {
-        let page:Page = serde_json::from_str(json)?;
-        Ok(page)
-    }
-}
-// holds a list of components
-#[derive(Serialize, Deserialize)]
-pub struct ComponentList {
+/// Components to insert at every element matching `selector`.
+#[derive(Debug, Deserialize)]
+pub struct Directive {
     pub selector: String,
-    pub op: Option<String>,
+    #[serde(default)]
+    pub op: Op,
     pub components: Vec<Component>,
 }
 
-
-// represent a component
-#[derive(Serialize, Deserialize)]
+/// An HTML snippet to insert.
+#[derive(Debug, Deserialize)]
 pub struct Component {
-    pub _ref: String,
+    /// Identifies the component in the fondu API; not used for rendering.
+    #[serde(rename = "_ref")]
+    #[allow(dead_code)]
+    pub reference: String,
     pub html: String,
 }
 
-// hold parsed fondu page data
-// and element handlers that will be used
-// to rewrite an html response body
-pub struct Renderer {
-    fondu_page: Page,
+/// Where components are inserted relative to a matched element.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(from = "Option<String>")]
+pub enum Op {
+    /// Replace the element's inner content. Also used when the op is missing or unknown.
+    #[default]
+    Replace,
+    /// Insert inside the element, after its content.
+    Append,
+    /// Insert inside the element, before its content.
+    Prepend,
+    /// Insert immediately before the element.
+    Before,
+    /// Insert immediately after the element.
+    After,
 }
 
-impl Renderer {
-    pub fn new(fondu_page: Page) -> Renderer {
-        Renderer {
-            fondu_page,
+impl From<Option<String>> for Op {
+    fn from(op: Option<String>) -> Self {
+        match op.as_deref() {
+            Some("append") => Op::Append,
+            Some("prepend") => Op::Prepend,
+            Some("before") => Op::Before,
+            Some("after") => Op::After,
+            _ => Op::Replace,
         }
     }
+}
 
-    // set up the element handlers for each component list
-    // in the fondu_page data
-    fn setup_element_handlers(&mut self) -> Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> {
-        let mut handlers: Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> = Vec::new();
-        for component_list in self.fondu_page.selectors.iter() {
-            let selector: Cow<Selector> = match component_list.selector.parse() {
-                Ok(s) => Cow::Owned(s),
-                Err(_) => {
-                    println!("Invalid selector: {}", component_list.selector);
-                    continue;
-                }
-            };
-            let components = component_list.components.as_slice();
-            // check to see if an "op" operation value is set;
-            // default to 'replace'
-            let op = match &component_list.op {
-                Some(x) => x.as_str(),
-                None => "replace",
-            };
-            println!("element handler: selector: {} op: {}", component_list.selector, op);
-            let closure = move |el: &mut Element| {
-                let mut string_list = vec![];
-                // loop through all the component html
-                // and combine them into one big string
-                for component in components {
-                    string_list.push(component.html.to_string());
-                }
-                let html = string_list.join("\n");
-
-                // if no op is set then replace the inner contents
-                match op {
-                  "append" =>  el.append(&html, ContentType::Html),
-                  "prepend" =>  el.prepend(&html, ContentType::Html),
-                  "after" =>  el.after(&html, ContentType::Html),
-                  "before" =>  el.before(&html, ContentType::Html),
-                  _  =>  el.set_inner_content(&html, ContentType::Html),
-                }
-                Ok(())
-            };
-            let element_handler = ElementContentHandlers::default().element(closure);
-            handlers.push((selector, element_handler))
+impl Op {
+    fn apply(self, el: &mut Element, html: &str) {
+        match self {
+            Op::Replace => el.set_inner_content(html, ContentType::Html),
+            Op::Append => el.append(html, ContentType::Html),
+            Op::Prepend => el.prepend(html, ContentType::Html),
+            Op::Before => el.before(html, ContentType::Html),
+            Op::After => el.after(html, ContentType::Html),
         }
-        handlers
+    }
+}
+
+impl Page {
+    pub fn from_json(json: &[u8]) -> serde_json::Result<Page> {
+        serde_json::from_slice(json)
     }
 
-    // parse the fondu response and stream the rewritten HTML to the output writer
-    pub fn pipe_through(&mut self, mut src_body: impl Read, output_writer: impl std::io::Write) -> Result<(), Error> {
-        // set up the element handlers
-        let element_content_handlers = self.setup_element_handlers();
-
-        // shared with the rewriter's output sink so we can flush
-        // and check for write errors between input chunks
-        let output_writer = RefCell::new(output_writer);
-        let write_err: Cell<Option<std::io::Error>> = Cell::new(None);
-
+    /// Streams `input` to `output`, applying the directives as the HTML passes through.
+    ///
+    /// Output is flushed after each input chunk so it reaches the client as the source arrives.
+    pub fn rewrite(&self, mut input: impl Read, output: impl Write) -> Result<(), RewriteError> {
+        let sink = RefCell::new(Sink::new(output));
         let mut rewriter = HtmlRewriter::new(
             Settings {
-                element_content_handlers,
+                element_content_handlers: self.element_handlers(),
                 ..Settings::default()
             },
-            |c: &[u8]| {
-                if let Err(e) = output_writer.borrow_mut().write_all(c) {
-                    write_err.set(Some(e));
-                }
-            },
+            |chunk: &[u8]| sink.borrow_mut().write(chunk),
         );
 
-        // set up a buffer for the src_body html
-        // Increase buffer size for better throughput
-        let mut buffer = [0; 4096];
-
-        // read through the src_body html and rewrite
+        let mut buffer = [0; CHUNK_SIZE];
         loop {
-            let bytes_read = match src_body.read(&mut buffer) {
+            let len = match input.read(&mut buffer) {
                 Ok(0) => break,
-                Ok(n) => n,
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(e) => return Err(Error::msg(format!("Input read error: {}", e))),
+                Ok(len) => len,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(RewriteError::Read(e)),
             };
-            if let Err(e) = rewriter.write(&buffer[..bytes_read]) {
-                return Err(Error::msg(e.to_string()));
-            }
-            // send what we have so far rather than waiting for the
-            // writer's buffer to fill; stop early if the output is gone
-            if let Err(e) = output_writer.borrow_mut().flush() {
-                write_err.set(Some(e));
-            }
-            if let Some(e) = write_err.take() {
-                return Err(Error::msg(format!("Output write error: {}", e)));
-            }
+            rewriter.write(&buffer[..len])?;
+            sink.borrow_mut().flush()?;
         }
+        rewriter.end()?;
 
-        rewriter.end().map_err(|e| Error::msg(e.to_string()))?;
+        sink.into_inner().flush()
+    }
 
-        if let Some(e) = write_err.take() {
-            return Err(Error::msg(format!("Output write error: {}", e)));
-        }
-
-        Ok(())
+    /// Builds a handler for each directive, skipping (and logging) invalid selectors.
+    fn element_handlers(&self) -> Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> {
+        self.selectors
+            .iter()
+            .filter_map(|directive| {
+                let selector: Selector = match directive.selector.parse() {
+                    Ok(selector) => selector,
+                    Err(e) => {
+                        println!("Skipping invalid selector {:?}: {}", directive.selector, e);
+                        return None;
+                    }
+                };
+                let html = directive
+                    .components
+                    .iter()
+                    .map(|component| component.html.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let op = directive.op;
+                let handlers =
+                    ElementContentHandlers::default().element(move |el: &mut Element| {
+                        op.apply(el, &html);
+                        Ok(())
+                    });
+                Some((Cow::Owned(selector), handlers))
+            })
+            .collect()
     }
 }
 
+/// Receives rewriter output. `lol_html`'s output sink can't return errors,
+/// so the first write error is kept and reported by the next `flush`.
+struct Sink<W> {
+    writer: W,
+    error: Option<io::Error>,
+}
+
+impl<W: Write> Sink<W> {
+    fn new(writer: W) -> Self {
+        Sink {
+            writer,
+            error: None,
+        }
+    }
+
+    fn write(&mut self, chunk: &[u8]) {
+        if self.error.is_none() {
+            self.error = self.writer.write_all(chunk).err();
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), RewriteError> {
+        match self.error.take() {
+            Some(e) => Err(RewriteError::Write(e)),
+            None => self.writer.flush().map_err(RewriteError::Write),
+        }
+    }
+}
+
+/// Why rewriting stopped before the end of the page.
+#[derive(Debug)]
+pub enum RewriteError {
+    /// Reading the source HTML failed, e.g. the content backend connection dropped.
+    Read(io::Error),
+    /// Writing the output failed, e.g. the client disconnected.
+    Write(io::Error),
+    /// `lol_html` couldn't process the HTML.
+    Html(RewritingError),
+}
+
+impl fmt::Display for RewriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RewriteError::Read(e) => write!(f, "reading source HTML: {e}"),
+            RewriteError::Write(e) => write!(f, "writing output: {e}"),
+            RewriteError::Html(e) => write!(f, "rewriting HTML: {e}"),
+        }
+    }
+}
+
+impl Error for RewriteError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            RewriteError::Read(e) | RewriteError::Write(e) => Some(e),
+            RewriteError::Html(e) => Some(e),
+        }
+    }
+}
+
+impl From<RewritingError> for RewriteError {
+    fn from(e: RewritingError) -> Self {
+        RewriteError::Html(e)
+    }
+}
+
+#[cfg(test)]
+mod tests;

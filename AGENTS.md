@@ -17,7 +17,9 @@ This document is intended for AI coding agents to quickly understand the project
 ## Repository Structure
 
 - `src/main.rs`: Entry point, request routing, and backend orchestration.
-- `src/fondu.rs`: HTML rewriting logic using `lol_html`.
+- `src/fondu.rs`: Fondu directive types and the streaming HTML rewriter (`lol_html`); tests in `src/fondu/tests.rs`.
+- `src/config.rs`: Settings from the `config` config store.
+- `src/pending.rs`: Waiting on a pending backend request with a deadline (the fondu time budget).
 - `fastly.toml`: Deployment and local development configuration.
 - `Cargo.toml`: Project dependencies (`fastly`, `lol_html`, `serde`, etc.).
 - `Makefile`: Human-friendly wrappers for build/test commands.
