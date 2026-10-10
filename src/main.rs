@@ -20,20 +20,32 @@ lazy_static::lazy_static! {
     static ref RE: Regex = Regex::new(r"\.[\w]+$").unwrap();
 }
 
-#[fastly::main]
-fn main(req: Request) -> Result<Response, Error> {
+// not using #[fastly::main] because rewritten responses are streamed
+// to the client rather than returned as a buffered Response
+fn main() {
+    let req = Request::from_client();
+    // errors returned here happen before anything is sent to the client
+    if let Err(e) = handle(req) {
+        println!("Request failed: {}", e);
+        Response::from_status(StatusCode::INTERNAL_SERVER_ERROR).send_to_client();
+    }
+}
+
+fn handle(req: Request) -> Result<(), Error> {
     let path = String::from(req.get_path());
     // todo -- skip fondu requests for certain request patterns like .css or .jss or .jpg etc
-	// todo -- alow configuration to exclude route patterns
-	// for now only process requests with no extension
-	if !RE.is_match(path.as_str()) {
-    	rewrite(req)
-	} else {
-		println!("skipping {}", path);
-		Ok(req.send(CONTENT_SOURCE_BACKEND)?)
-	}
+    // todo -- alow configuration to exclude route patterns
+    // for now only process requests with no extension
+    if !RE.is_match(path.as_str()) {
+        rewrite(req)
+    } else {
+        println!("skipping {}", path);
+        req.send(CONTENT_SOURCE_BACKEND)?.send_to_client();
+        Ok(())
+    }
 }
-fn rewrite(mut req: Request) -> Result<Response, Error> {
+
+fn rewrite(mut req: Request) -> Result<(), Error> {
     // capture these for logging later
     let method = String::from(req.get_method_str());
     let path = String::from(req.get_path());
@@ -47,8 +59,10 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
     // in future we would proxy all requests to backend
     const VALID_METHODS: [Method; 2] = [Method::HEAD, Method::GET];
     if !(VALID_METHODS.contains(req.get_method())) {
-        return Ok(Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
-            .with_body(Body::from("This method is not allowed")));
+        Response::from_status(StatusCode::METHOD_NOT_ALLOWED)
+            .with_body(Body::from("This method is not allowed"))
+            .send_to_client();
+        return Ok(());
     }
     let mut fondu_req: Option<PendingRequest> = None;
 
@@ -108,12 +122,21 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                     }
                 }
             }
+            // headers must be set before the response starts streaming
+            // use faslty dynamic compression
+            // see --> https://developer.fastly.com/learning/concepts/compression/
+            content_source_resp.set_header("x-compress-hint", "on");
+            // for demo lets make sure responses are not cached in any
+            // upstream caches or the browser
+            content_source_resp.set_header("Cache-Control",
+                "private, max-age=0, no-cache, no-store, must-revalidate"
+            );
             // if fondu_req is None
             // then that means no request was made to fondu
             // so just return the original content_source resp
             // otherwise lets parse the fondu response
-            // and rewrite the html
-            let mut content_source_resp = match fondu_req {
+            // and stream the rewritten html
+            match fondu_req {
                 Some(fondu_req) => {
                     // todo figure out how to poll for the
                     // fondu resp; ultimately we only want to wait N ms for the fondu response
@@ -131,44 +154,31 @@ fn rewrite(mut req: Request) -> Result<Response, Error> {
                             // only proceed with an OK resonse
                             match fondu_resp_status {
                                 StatusCode::OK => {
-                                    // Use proper error handling, but here rewrite_response failure 
-                                    // should implementation-wise probably also fail open?
-                                    // Currently rewrite_response errors propagate.
-                                    // For now, let's keep rewrite_response propogation as it's logic error not network.
-                                    let mut rr = rewrite_response(content_source_resp, fondu_resp.into_body())?;
-                                    rr.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
-                                    rr
+                                    stream_rewritten_response(content_source_resp, fondu_resp.into_body())
                                 }
                                 _ => {
                                     println!("error fetching:{}", fondu_resp_status);
-                                    content_source_resp
+                                    content_source_resp.send_to_client();
                                 },
                             }
                         }
                         Err(e) => {
                              println!("Failed to fetch fondu data (Fail Open): {}", e);
-                             content_source_resp
+                             content_source_resp.send_to_client();
                         }
                     }
                 }
-                None => content_source_resp,
+                None => content_source_resp.send_to_client(),
             };
-            // use faslty dynamic compression
-            // see --> https://developer.fastly.com/learning/concepts/compression/
-            content_source_resp.set_header("x-compress-hint", "on");
-            // for demo lets make sure responses are not cached in any
-            // upstream caches or the browser
-            content_source_resp.set_header("Cache-Control",
-                "private, max-age=0, no-cache, no-store, must-revalidate"
-            );
-            Ok(content_source_resp)
+            Ok(())
         },
         // otherwise just return unmodified resonse
         _ => {
             // use faslty dynamic compression
             // see --> https://developer.fastly.com/learning/concepts/compression/
             content_source_resp.set_header("x-compress-hint", "on");
-            Ok(content_source_resp)
+            content_source_resp.send_to_client();
+            Ok(())
         },
     }
 }
@@ -195,42 +205,44 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError
 }
 
 // given a content_source response and a fondu response
-// rewrite the content_source response body
-// with the components from the fondu
-fn rewrite_response(
-    content_source_resp: Response,
+// stream the content_source response body to the client,
+// rewriting it with the components from the fondu as it goes
+fn stream_rewritten_response(
+    mut content_source_resp: Response,
     fondu_resp_body: Body,
-) -> Result<Response, Error> {
+) {
     // parse the fondu response
     let fondu_page = fondu::Page::from_json_str(fondu_resp_body.into_string().as_str());
     // if we encounter an error here
-    // return the original content_source_resp
+    // send the original content_source_resp
     let fondu_page = match fondu_page {
         Ok(fondu_page) => fondu_page,
-        Err(_) => return Ok(content_source_resp),
+        Err(e) => {
+            println!("Invalid fondu data (Fail Open): {}", e);
+            content_source_resp.send_to_client();
+            return;
+        }
     };
     // set up a fondu page renderer
     let mut fondu_renderer = fondu::Renderer::new(fondu_page);
-    // break the content_source response into header/body parts
-    // We keep the handle to the body to read from it
-    let (content_source_response_handle, mut content_source_body_handle) = content_source_resp.into_handles();
-
-    // Create a new empty body for the output
-    let mut output_body = Body::new();
-    
-    // Pipe input -> rewriter -> output
-    // We pass a mutable reference to content_source_body_handle so we don't consume it on error
-    match fondu_renderer.pipe_through(&mut content_source_body_handle, &mut output_body) {
+    let content_source_body = content_source_resp.take_body();
+    // the rewritten body length differs from the origin's
+    content_source_resp.remove_header(header::CONTENT_LENGTH);
+    content_source_resp.set_header("X-FONDU-REWRITE", HeaderValue::from_static("true"));
+    // headers go out now; body bytes go out as they are rewritten
+    let mut client_body = content_source_resp.stream_to_client();
+    match fondu_renderer.pipe_through(content_source_body, &mut client_body) {
         Ok(_) => {
-             //return the content_source page with fondu components inserted
-             let modified_content_source_resp = Response::from_handles(content_source_response_handle, output_body.into_handle());
-             Ok(modified_content_source_resp)
+            if let Err(e) = client_body.finish() {
+                println!("Failed to finish client response: {}", e);
+            }
         },
         Err(e) => {
-            println!("Rewriting failed, returning original content: {}", e);
-            // Reconstruct original response from handles
-            let original_resp = Response::from_handles(content_source_response_handle, content_source_body_handle);
-            Ok(original_resp)
+            // part of the page has already been sent, so we can't fall back
+            // to the original content; dropping client_body without finish()
+            // aborts the response so the client sees it as incomplete
+            println!("Rewriting failed mid-stream, aborting response: {}", e);
+            drop(client_body);
         }
     }
 }
