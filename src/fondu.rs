@@ -90,13 +90,9 @@ impl Page {
     /// Output is flushed after each input chunk so it reaches the client as the source arrives.
     pub fn rewrite(&self, mut input: impl Read, output: impl Write) -> Result<(), RewriteError> {
         let sink = RefCell::new(Sink::new(output));
-        let mut rewriter = HtmlRewriter::new(
-            Settings {
-                element_content_handlers: self.element_handlers(),
-                ..Settings::default()
-            },
-            |chunk: &[u8]| sink.borrow_mut().write(chunk),
-        );
+        let mut rewriter = HtmlRewriter::new(self.settings(), |chunk: &[u8]| {
+            sink.borrow_mut().write(chunk);
+        });
 
         let mut buffer = [0; CHUNK_SIZE];
         loop {
@@ -114,8 +110,9 @@ impl Page {
         sink.into_inner().flush()
     }
 
-    /// Builds a handler for each directive, skipping (and logging) invalid selectors.
-    fn element_handlers(&self) -> Vec<(Cow<'_, Selector>, ElementContentHandlers<'_>)> {
+    /// Rewriter settings with a handler for each directive, skipping (and logging) invalid
+    /// selectors.
+    fn settings(&self) -> Settings<'_, '_> {
         self.selectors
             .iter()
             .filter_map(|directive| {
@@ -140,7 +137,7 @@ impl Page {
                     });
                 Some((Cow::Owned(selector), handlers))
             })
-            .collect()
+            .fold(Settings::new(), Settings::append_element_content_handler)
     }
 }
 
