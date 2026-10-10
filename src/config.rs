@@ -7,8 +7,9 @@ use fastly::ConfigStore;
 const STORE_NAME: &str = "config";
 
 pub struct Config {
-    /// Path on the fondu backend to fetch directives from.
-    pub fondu_path: String,
+    /// Prefix for the request path on the fondu backend, e.g. `/directives` sends a
+    /// request for `/news/story` to fondu as `/directives/news/story`.
+    pub fondu_path_prefix: String,
     /// How long to wait for fondu, from the start of the request, before failing open.
     /// `None` waits as long as the fondu backend takes.
     pub fondu_budget: Option<Duration>,
@@ -18,7 +19,7 @@ impl Config {
     pub fn load() -> Self {
         let store = ConfigStore::open(STORE_NAME);
         Config {
-            fondu_path: store.get("fondu_path").unwrap_or_else(|| "/".to_owned()),
+            fondu_path_prefix: store.get("fondu_path_prefix").unwrap_or_default(),
             fondu_budget: store
                 .get("fondu_budget_ms")
                 .and_then(|ms| parse_budget(&ms)),

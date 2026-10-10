@@ -34,7 +34,7 @@ echo "Starting Content Backend on port 3000..."
 python3 -m http.server 3000 --directory demo/content &
 
 echo "Starting Fondu Backend on port 4000..."
-python3 -m http.server 4000 --directory demo/fondu &
+python3 demo/fondu/server.py 4000 &
 
 # Give them a moment to spin up
 sleep 1

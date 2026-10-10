@@ -19,6 +19,7 @@ This document is intended for AI coding agents to quickly understand the project
 - `src/main.rs`: Entry point, request routing, and backend orchestration.
 - `src/fondu.rs`: Fondu directive types and the streaming HTML rewriter (`lol_html`); tests in `src/fondu/tests.rs`.
 - `src/config.rs`: Settings from the `config` config store.
+- `src/caching.rs`: Combines the content and fondu caching headers for rewritten pages.
 - `src/pending.rs`: Waiting on a pending backend request with a deadline (the fondu time budget).
 - `fastly.toml`: Deployment and local development configuration.
 - `Cargo.toml`: Project dependencies (`fastly`, `lol_html`, `serde`, etc.).
@@ -41,7 +42,7 @@ This document is intended for AI coding agents to quickly understand the project
 ## Configuration Notes
 
 - **Backends**: Requires `content` and `fondu` backends to be defined in `fastly.toml` or environment.
-- **Config Store**: Uses a dictionary named `config` with a `fondu_path` key to determine where to fetch component data, and an optional `fondu_budget_ms` key: how long (from the start of the request) to wait for fondu before failing open with the original content. If unset, it waits as long as the fondu backend takes.
+- **Config Store**: Uses a dictionary named `config` with an optional `fondu_path_prefix` key (prepended to the request path for the fondu request, e.g. `/directives` sends `/news/story` to fondu as `/directives/news/story`), and an optional `fondu_budget_ms` key: how long (from the start of the request) to wait for fondu before failing open with the original content. If unset, it waits as long as the fondu backend takes.
 - **WASI**: The project targets `wasip1`. Avoid standard library features not supported in the WASI environment (e.g., synchronous file I/O).
 
 ## For Implementation

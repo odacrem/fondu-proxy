@@ -10,15 +10,29 @@ Includes.
 
 #### What?
 
-When Fondu Proxy receives a request for a web page e.g. to
-https://my-front-page.com, it makes 2
-asynchronous subrequests
+When Fondu Proxy receives a `GET` request for a web page, e.g. for
+https://my-front-page.com/news/story, it sends the request to two backends
+in parallel, both acting as origins for it:
 
-a) to the content source backend (ie the backend for https://my-front-page.com)
+a) the `content` backend (the origin for https://my-front-page.com), which
+returns the page
 
+b) the `fondu` backend, which returns directives for changing that page
 
+Both receive the client's request: path, query, headers and cookies. The
+fondu request's path can be mounted under the `fondu_path_prefix` config
+value, and conditional, range and `Accept-Encoding` headers are removed from
+it. Each backend's response headers control how Fastly caches its responses,
+as with any origin.
 
-b) to the "component source" backend
+The content response is always sent. If the fondu directives arrive within
+the `fondu_budget_ms` time budget, they are applied as the page streams to
+the client; otherwise the page is sent unchanged. A rewritten page's
+`Cache-Control` is the stricter of the two responses', its `Vary` covers
+both, and the content response's `ETag` and `Last-Modified` are removed.
+
+Requests other than `GET`, and requests for paths with a file extension
+(e.g. `.css`), go straight to the content backend.
 
 ### Backend API Specification
 
