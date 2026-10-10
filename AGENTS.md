@@ -39,7 +39,7 @@ This document is intended for AI coding agents to quickly understand the project
 ## Configuration Notes
 
 - **Backends**: Requires `content` and `fondu` backends to be defined in `fastly.toml` or environment.
-- **Config Store**: Uses a dictionary named `config` with a `fondu_path` key to determine where to fetch component data.
+- **Config Store**: Uses a dictionary named `config` with a `fondu_path` key to determine where to fetch component data, and an optional `fondu_budget_ms` key: how long (from the start of the request) to wait for fondu before failing open with the original content. If unset, it waits as long as the fondu backend takes.
 - **WASI**: The project targets `wasip1`. Avoid standard library features not supported in the WASI environment (e.g., synchronous file I/O).
 
 ## For Implementation

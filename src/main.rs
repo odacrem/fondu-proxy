@@ -1,7 +1,9 @@
 use fastly::http::{header, HeaderValue, Method, StatusCode};
 use fastly::{ConfigStore, Error, Request, Response, Body};
-use fastly::http::request::{PendingRequest, SendError};
-use std::time::{Instant};
+use fastly::http::request::SendErrorCause;
+use fastly::handle::{BodyHandle, PendingRequestHandle};
+use fastly_sys::fastly_async_io;
+use std::time::{Duration, Instant};
 use regex::Regex;
 // include fondu module src/fondu.rs
 mod fondu;
@@ -46,6 +48,8 @@ fn handle(req: Request) -> Result<(), Error> {
 }
 
 fn rewrite(mut req: Request) -> Result<(), Error> {
+    // the fondu time budget is counted from here
+    let request_start = Instant::now();
     // capture these for logging later
     let method = String::from(req.get_method_str());
     let path = String::from(req.get_path());
@@ -54,6 +58,18 @@ fn rewrite(mut req: Request) -> Result<(), Error> {
     let fondu_path = match fondu_path {
         Some(path) => path,
         None => String::from("/")
+    };
+    // how long to wait for fondu before sending the original content;
+    // if unset, wait as long as the fondu backend takes
+    let fondu_deadline = match config_dict.get("fondu_budget_ms") {
+        Some(ms) => match ms.parse::<u64>() {
+            Ok(ms) => Some(request_start + Duration::from_millis(ms)),
+            Err(_) => {
+                println!("Invalid fondu_budget_ms: {}", ms);
+                None
+            }
+        },
+        None => None,
     };
     // only allow GET and HEAD requests
     // in future we would proxy all requests to backend
@@ -64,7 +80,7 @@ fn rewrite(mut req: Request) -> Result<(), Error> {
             .send_to_client();
         return Ok(());
     }
-    let mut fondu_req: Option<PendingRequest> = None;
+    let mut fondu_req: Option<PendingRequestHandle> = None;
 
 
 
@@ -138,16 +154,15 @@ fn rewrite(mut req: Request) -> Result<(), Error> {
             // and stream the rewritten html
             match fondu_req {
                 Some(fondu_req) => {
-                    // todo figure out how to poll for the
-                    // fondu resp; ultimately we only want to wait N ms for the fondu response
-                    // however, the backend config will have connect & time-between-bytes set
-                    // that should be used to ensure that we don't wait more than an acceptable
-                    // amount of time to fetch data
                     let start = Instant::now();
-                    
+
                     // FAIL OPEN: If fondu fails (timeout, network), return original content
-                    match fondu_req.wait() {
-                        Ok(fondu_resp) => {
+                    match wait_for_fondu(fondu_req, fondu_deadline) {
+                        None => {
+                            println!("Fondu not ready within budget (Fail Open): {:?}", request_start.elapsed());
+                            content_source_resp.send_to_client();
+                        }
+                        Some(Ok(fondu_resp)) => {
                             println!("Wait for fondu: {:?}", start.elapsed());
                             let fondu_resp_status = fondu_resp.get_status();
                             // lets check the the response code from fondu
@@ -162,7 +177,7 @@ fn rewrite(mut req: Request) -> Result<(), Error> {
                                 },
                             }
                         }
-                        Err(e) => {
+                        Some(Err(e)) => {
                              println!("Failed to fetch fondu data (Fail Open): {}", e);
                              content_source_resp.send_to_client();
                         }
@@ -191,7 +206,7 @@ fn header_val(header: Option<&HeaderValue>) -> &str {
     }
 }
 
-fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError> {
+fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequestHandle, SendErrorCause> {
     let mut fondu_req = Request::get(fondu_uri);
     // We leverage the backend's Cache-Control headers for SWR/SIE automatically
     // fondu_req.set_pass(true);
@@ -200,8 +215,45 @@ fn fetch_fondu_data_async(fondu_uri: String) -> Result<PendingRequest, SendError
     //fondu_req.set_auto_decompress_gzip(true);
     //TODO FIGURE OUT WHY THIS NOT WORK
     fondu_req.remove_header(header::ACCEPT_ENCODING);
-    // send the request async so we can move on to requesting the content_source resource
-    fondu_req.send_async(FONDU_BACKEND)
+    // send the request async so we can move on to requesting the content_source resource;
+    // uses the handle API because PendingRequest doesn't expose the raw handle
+    // that wait_for_fondu needs to wait with a timeout
+    let (req_handle, body_handle) = fondu_req.into_handles();
+    req_handle.send_async(body_handle.unwrap_or_else(BodyHandle::new), FONDU_BACKEND)
+}
+
+// wait for the fondu response until the deadline, or indefinitely if there is none
+// returns None if fondu wasn't ready in time
+fn wait_for_fondu(
+    pending: PendingRequestHandle,
+    deadline: Option<Instant>,
+) -> Option<Result<Response, SendErrorCause>> {
+    if let Some(deadline) = deadline {
+        if !is_ready_by(&pending, deadline) {
+            return None;
+        }
+    }
+    Some(pending.wait().map(|(resp_handle, body_handle)| Response::from_handles(resp_handle, body_handle)))
+}
+
+// block until the pending request is ready or the deadline passes
+// based on RequestPromise::wait_timeout in fastly::experimental::reusable_sessions
+fn is_ready_by(pending: &PendingRequestHandle, deadline: Instant) -> bool {
+    let handle = pending.as_u32();
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        // select treats a zero timeout as "wait forever", so just check readiness
+        let mut ready = 0u32;
+        let status = unsafe { fastly_async_io::is_ready(handle, &mut ready) };
+        status.is_ok() && ready != 0
+    } else {
+        // round sub-millisecond waits up to 1ms
+        let millis = remaining.as_millis().try_into().unwrap_or(u32::MAX).max(1);
+        // select sets this to u32::MAX on timeout
+        let mut done_index = u32::MAX;
+        let status = unsafe { fastly_async_io::select(&handle, 1, millis, &mut done_index) };
+        status.is_ok() && done_index == 0
+    }
 }
 
 // given a content_source response and a fondu response
